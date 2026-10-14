@@ -4,7 +4,7 @@ A responsive personal-finance planner with optional Supabase sign-in and cross-d
 
 ## What syncs
 
-The app syncs financial settings, cards, goals, monthly plans, and transactions as one private data record per authenticated user. Changes are saved locally immediately and sent to the cloud shortly afterward. When the app regains focus, it checks for newer cloud data. Use **Data & settings → Sync now** to force a refresh.
+The app syncs financial settings, cards, goals, monthly plans, and transactions as one private data record per authenticated user. Changes are saved locally immediately and sent to the cloud shortly afterward. Pending local edits are uploaded before the app pulls cloud data, and a newer local edit made during an upload is queued for another save. This prevents a stale cloud pull from immediately restoring a deleted transaction. When the app regains focus, it checks for newer cloud data. Use **Data & settings → Sync now** to force a refresh.
 
 This is a single-user planner, not a collaborative multi-user ledger. Avoid editing the same records on two devices at the exact same time; the latest full-document save can replace another device's changes. JSON backups are still recommended.
 

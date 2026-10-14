@@ -441,15 +441,15 @@ return;
     toast.timer = setTimeout(() => t.classList.remove("show"), 2500);
   }
   function esc(s) {
-return String(s ?? "").replace(
+    return String(s ?? "").replace(
       /[&<>"']/g,
       (c) =>
         ({
-          "&": "&",
-          "<": "<",
-          ">": ">",
-          '"': """,
-          "'": "'",
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
         })[c],
     );
   }
