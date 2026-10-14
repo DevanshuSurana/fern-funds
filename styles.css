@@ -9,3 +9,11 @@
 .cloud-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 #cloud-account-actions[hidden] { display: none; }
 @media (max-width: 600px) { .cloud-buttons > button { flex: 1 1 100%; } }
+
+/* Login-first experience and compact mobile navigation */
+[hidden]{display:none!important}
+.login-gate{min-height:100svh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top right,#e4eee4 0,transparent 38%),var(--ivory)}
+.login-card{width:min(460px,100%);padding:clamp(24px,5vw,42px);background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:24px;box-shadow:0 22px 70px rgba(36,68,59,.1)}
+.login-brand{padding:0 0 34px}.login-card h1{font-family:Georgia,serif;font-weight:400;font-size:clamp(32px,6vw,43px);line-height:1.08;letter-spacing:-1px;color:var(--forest);margin:12px 0}.login-card>p{font-size:14px;line-height:1.6}.login-form{margin-top:24px}.login-form .button{min-height:44px}.login-footnote{font-size:11px!important;color:var(--muted);margin-top:18px}.login-card .cloud-status{font-size:12px;margin-top:18px;overflow-wrap:anywhere}
+.mobile-menu-toggle{display:none}.workspace-nav{display:flex;flex-direction:column;min-height:0}.top-settings{display:none}
+@media(max-width:760px){.sidebar{overflow:visible;white-space:normal;padding:10px 12px}.brand{padding:0 4px 8px}.mobile-menu-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border:1px solid #4c6b5e;border-radius:10px;background:#2b4e42;color:#fff;font-weight:650;text-align:left}.mobile-menu-toggle span{font-size:12px}.workspace-nav{display:none;padding-top:8px}.workspace-nav.mobile-open{display:flex}.workspace-nav .side-label{display:block;padding:10px 12px 6px}.sidebar .nav-item{display:flex;width:100%;padding:12px;margin:2px 0;font-size:13px;gap:12px}.sidebar .nav-item span{font-size:17px;width:20px}.sidebar-bottom{display:block;margin-top:8px}.mini-goal,.privacy-note{display:none}.sidebar-bottom .nav-item{border:1px solid #4c6b5e}.top-settings{display:inline-flex}.top-actions{gap:6px}.top-actions .secondary{font-size:11px;padding:9px 10px}.topbar h1{font-size:23px}.login-gate{padding:16px}.login-card{padding:25px 21px;border-radius:20px}.login-brand{padding-bottom:27px}}

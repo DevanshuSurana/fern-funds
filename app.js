@@ -34,25 +34,29 @@ function save(){
  try{localStorage.setItem(KEY,JSON.stringify(data));}catch(e){toast("Could not save locally. Export a backup and check browser storage.");console.error(e);}
  if(cloudUser&&cloudClient&&cloudReady){clearTimeout(cloudSaveTimer);cloudSaveTimer=setTimeout(()=>pushCloudData(false),700);setCloudStatus("Changes saved on this device. Syncing to cloud…","pending");}
 }
-function setCloudStatus(message,state=""){const el=$("#cloud-status");if(el){el.textContent=message;el.dataset.state=state;}}
+function setCloudStatus(message,state=""){$$(".cloud-status").forEach(el=>{el.textContent=message;el.dataset.state=state;});}
+function showLogin(message,state=""){const gate=$("#login-gate"),shell=$("#app-shell");if(gate)gate.hidden=false;if(shell)shell.hidden=true;if(message)setCloudStatus(message,state);}
+function showDashboard(){const gate=$("#login-gate"),shell=$("#app-shell");if(gate)gate.hidden=true;if(shell)shell.hidden=false;}
 function setupCloud(){
  const cfg=window.FERN_FUNDS_SUPABASE||{};
  cloudConfigured=!!(window.supabase&&cfg.url&&cfg.anonKey&&!String(cfg.url).includes("YOUR_SUPABASE")&&!String(cfg.anonKey).includes("YOUR_SUPABASE"));
  const form=$("#cloud-auth-form");
- if(!cloudConfigured){setCloudStatus("Not configured yet. Add your Supabase project URL and publishable/anon key to config.js, then run the SQL in supabase-schema.sql.","error");form.querySelectorAll("input,button").forEach(el=>el.disabled=true);return;}
+ if(!cloudConfigured){showLogin("Cloud sign-in is not configured yet. Add your Supabase project URL and publishable/anon key to config.js, then run supabase-schema.sql in the SQL Editor.","error");$$("#gate-auth-form input, #gate-auth-form button, #cloud-auth-form input, #cloud-auth-form button").forEach(el=>el.disabled=true);return;}
  cloudClient=window.supabase.createClient(cfg.url,cfg.anonKey);
- form.addEventListener("submit",async e=>{e.preventDefault();await signIn();});
- $("#cloud-signup").addEventListener("click",signUp);
+ form.addEventListener("submit",async e=>{e.preventDefault();await signIn("cloud");});
+ $("#cloud-signup").addEventListener("click",()=>signUp("cloud"));
+ $("#gate-auth-form").addEventListener("submit",async e=>{e.preventDefault();await signIn("gate");});
+ $("#gate-signup").addEventListener("click",()=>signUp("gate"));
  $("#cloud-signout").addEventListener("click",signOut);
  $("#cloud-sync-now").addEventListener("click",()=>syncCloud(true));
  cloudClient.auth.getSession().then(({data:sessionData,error})=>{
-  if(error){setCloudStatus("Could not check sign-in session: "+error.message,"error");return;}
+  if(error){showLogin("Could not check sign-in session: "+error.message,"error");return;}
   if(sessionData.session)handleSignedIn(sessionData.session.user);
-  else setCloudStatus("Not signed in. Sign in with the same account on each device to sync your data.");
+  else showLogin("Sign in or create an account to open your dashboard.");
  });
  cloudClient.auth.onAuthStateChange((event,session)=>{
   if(event==="SIGNED_IN"&&session?.user)handleSignedIn(session.user);
-  if(event==="SIGNED_OUT"){cloudUser=null;cloudReady=false;$("#cloud-auth-form").hidden=false;$("#cloud-account-actions").hidden=true;setCloudStatus("Signed out. This device still has its local copy; cloud sync is paused.");}
+  if(event==="SIGNED_OUT"){cloudUser=null;cloudReady=false;$("#cloud-auth-form").hidden=false;$("#cloud-account-actions").hidden=true;showLogin("Signed out. Sign in to reopen your dashboard.");}
  });
  // Refresh when returning to this tab or switching back to the app on another device.
  window.addEventListener("focus",()=>{if(cloudUser&&cloudReady)syncCloud(false);});
@@ -60,17 +64,19 @@ function setupCloud(){
  // Periodic pull keeps an already-open device reasonably fresh when another device changes data.
  window.setInterval(()=>{if(!document.hidden&&cloudUser&&cloudReady)syncCloud(false);},30000);
 }
-async function signUp(){
- const email=$("#cloud-email").value.trim(),password=$("#cloud-password").value;
+function authFields(source){return source==="gate"?{email:$("#gate-email").value.trim(),password:$("#gate-password").value}:{email:$("#cloud-email").value.trim(),password:$("#cloud-password").value};}
+async function signUp(source="cloud"){
+ const {email,password}=authFields(source);
  if(!email||password.length<8){setCloudStatus("Enter a valid email and a password with at least 8 characters.","error");return;}
  setCloudStatus("Creating account…");
- const {data:result,error}=await cloudClient.auth.signUp({email,password});
+ const {data:result,error}=await cloudClient.auth.signUp({email,password,options:{emailRedirectTo:window.location.href.split("#")[0]}});
  if(error){setCloudStatus("Account creation failed: "+error.message,"error");return;}
  if(result.session)await handleSignedIn(result.user);
  else setCloudStatus("Account created. Check your email for a confirmation link, then return here and sign in.","connected");
 }
-async function signIn(){
- const email=$("#cloud-email").value.trim(),password=$("#cloud-password").value;
+async function signIn(source="cloud"){
+ const {email,password}=authFields(source);
+ if(!email||!password){setCloudStatus("Enter your email and password to sign in.","error");return;}
  setCloudStatus("Signing in…");
  const {data:result,error}=await cloudClient.auth.signInWithPassword({email,password});
  if(error){setCloudStatus("Sign-in failed: "+error.message,"error");return;}
@@ -87,6 +93,7 @@ async function handleSignedIn(user){
  $("#cloud-auth-form").hidden=true;$("#cloud-account-actions").hidden=false;
  setCloudStatus("Signed in as "+user.email+". Checking cloud data…","pending");
  await syncCloud(false);
+ showDashboard();
 }
 async function syncCloud(manual){
  if(!cloudUser||!cloudClient){setCloudStatus("Sign in to sync data.","error");return;}
@@ -126,7 +133,7 @@ function txsForMonth(m){return data.transactions.filter(t=>monthOf(t.date)===m);
 function sums(m){const ts=txsForMonth(m);return {income:ts.filter(t=>t.type==="Income").reduce((s,t)=>s+Number(t.amount),0),expenses:ts.filter(t=>t.type==="Expense").reduce((s,t)=>s+Number(t.amount),0),payments:ts.filter(t=>t.type==="Card payment").reduce((s,t)=>s+Number(t.amount),0),net:ts.reduce((s,t)=>s+txSigned(t),0)};}
 function getPlan(m){if(!data.plans[m])data.plans[m]={income: m>="2026-11"&&m<="2027-04"?892:0, categories:{"Rent":360,"Utilities":40,"Internet":15,"Groceries":m>="2027-05"&&m<="2027-08"?25:100,"Miscellaneous":m>="2027-05"&&m<="2027-08"?25:50,"NYC trip":m==="2026-12"?1100:0,"India trip":m==="2027-05"?1200:0,"Tuition":m==="2027-08"?12000:0,"Transportation":0,"Health":0,"Entertainment":0,"Other":0}};return data.plans[m];}
 function allMonths(){const months=[];for(let y=2026;y<=2027;y++){for(let m=1;m<=12;m++){const key=`${y}-${String(m).padStart(2,"0")}`;if(key>=MONTH_START&&key<="2027-12")months.push(key);}}return months;}
-function nav(view){currentView=view;$$(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${view}`));$$(".nav-item[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===view));const titles={overview:"Good planning, less money stress.",monthly:"Your month, with intention.",transactions:"Every dollar has a story.",goals:"Save for what matters.",cards:"Keep borrowing in view.",settings:"Your money, your rules."};$("#page-title").textContent=titles[view]||"Fern & Funds";render();}
+function nav(view){currentView=view;const navEl=$("#workspace-nav");if(navEl)navEl.classList.remove("mobile-open");const menuBtn=$("#mobile-menu-toggle");if(menuBtn)menuBtn.setAttribute("aria-expanded","false");$$(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${view}`));$$(".nav-item[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===view));const titles={overview:"Good planning, less money stress.",monthly:"Your month, with intention.",transactions:"Every dollar has a story.",goals:"Save for what matters.",cards:"Keep borrowing in view.",settings:"Your money, your rules."};$("#page-title").textContent=titles[view]||"Fern & Funds";render();}
 function render(){renderOverview();renderMonthly();renderTransactions();renderGoals();renderCards();renderSettings();$("#current-month-label").textContent=monthLabel(selectedMonth);}
 function renderOverview(){
  const s=data.settings, m=sums(selectedMonth);
@@ -187,6 +194,8 @@ function init(){
  $("#today-label").textContent=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}).toUpperCase();
  $("#current-month-label").textContent=monthLabel(selectedMonth);
  $$("[data-view]").forEach(b=>b.addEventListener("click",()=>nav(b.dataset.view)));
+ $("#mobile-menu-toggle").onclick=()=>{const navEl=$("#workspace-nav"),open=navEl.classList.toggle("mobile-open");$("#mobile-menu-toggle").setAttribute("aria-expanded",String(open));};
+ $("#account-menu-button").onclick=()=>nav("settings");
  $$("[data-goto]").forEach(b=>b.addEventListener("click",()=>nav(b.dataset.goto)));
  $("#prev-month").onclick=()=>{const d=new Date(selectedMonth+"-01T12:00:00");d.setMonth(d.getMonth()-1);selectedMonth=d.toISOString().slice(0,7);render();};
  $("#next-month").onclick=()=>{const d=new Date(selectedMonth+"-01T12:00:00");d.setMonth(d.getMonth()+1);selectedMonth=d.toISOString().slice(0,7);render();};

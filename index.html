@@ -8,9 +8,26 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app-shell">
+  <section id="login-gate" class="login-gate" aria-labelledby="login-title">
+    <div class="login-card">
+      <div class="brand login-brand"><div class="brand-mark">f.</div><div><strong>fern & funds</strong><small>your personal money space</small></div></div>
+      <div class="eyebrow">A CALMER WAY TO MANAGE MONEY</div>
+      <h1 id="login-title">Your money, in one place.</h1>
+      <p class="muted">Sign in to open your private dashboard and sync your planner across devices.</p>
+      <form id="gate-auth-form" class="form-grid login-form">
+        <label class="full-span">Email address<input id="gate-email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+        <label class="full-span">Password<input id="gate-password" type="password" autocomplete="current-password" minlength="8" required placeholder="At least 8 characters"></label>
+        <div class="cloud-buttons full-span"><button class="button" type="submit" id="gate-signin">Sign in</button><button class="button secondary" type="button" id="gate-signup">Create account</button></div>
+      </form>
+      <div id="gate-status" class="cloud-status" role="status">Checking secure sign-in…</div>
+      <p class="login-footnote">Your dashboard appears after you sign in. Use the same account on each device to access your synced data.</p>
+    </div>
+  </section>
+  <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">f.</div><div><strong>fern & funds</strong><small>your personal money space</small></div></div>
+      <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-expanded="false" aria-controls="workspace-nav">☰ <span>Menu</span></button>
+      <nav id="workspace-nav" class="workspace-nav">
       <div class="side-label">WORKSPACE</div>
       <button class="nav-item active" data-view="overview"><span>◫</span> Overview</button>
       <button class="nav-item" data-view="monthly"><span>▦</span> Monthly planner</button>
@@ -20,14 +37,15 @@
       <div class="sidebar-bottom">
         <div class="mini-goal"><span class="eyebrow">YOUR NORTH STAR</span><strong>Tuition, first.</strong><p>Small, consistent decisions add up.</p></div>
         <button class="nav-item" data-view="settings"><span>⚙</span> Data & settings</button>
-        <div class="privacy-note">Your records stay in this browser unless you export them.</div>
+        <div class="privacy-note">Your records stay private to your account.</div>
       </div>
+      </nav>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div><div class="eyebrow" id="today-label">YOUR MONEY, WITH INTENTION</div><h1 id="page-title">Good planning, less money stress.</h1></div>
-        <div class="top-actions"><button class="button secondary" id="export-top">Export backup</button><button class="avatar" title="Personal planner">FF</button></div>
+        <div class="top-actions"><button class="button secondary" id="export-top">Export backup</button><button class="avatar" id="account-menu-button" title="Account and settings">FF</button><button class="button secondary top-settings" data-view="settings">Settings</button></div>
       </header>
 
       <section id="view-overview" class="view active">

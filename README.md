@@ -32,8 +32,8 @@ This is a single-user planner, not a collaborative multi-user ledger. Avoid edit
 2. Upload `index.html`, `styles.css`, `app.js`, `config.js`, `supabase-schema.sql`, `.nojekyll`, and `README.md` to the repository root.
 3. Do **not** upload JSON backups or private financial records. The project URL and public publishable/anon key are intended for browser clients; database access is restricted by the row-level security policies in `supabase-schema.sql`.
 4. Open **Settings → Pages**, select **Deploy from a branch**, choose `main` and `/(root)`, and save.
-5. Visit the published site, open **Data & settings → Sync across your devices**, create an account or sign in, and follow any email-confirmation instructions.
-6. Open the same published URL on your phone and sign in with the same account.
+5. Visit the published site. The app now opens on a **sign-in / create-account screen**; create an account or sign in and follow any email-confirmation instructions. The dashboard appears only after authentication.
+6. Open the same published URL on your phone and sign in with the same account. On mobile, use the **Menu** button to open navigation and choose **Data & settings**.
 
 ## 3. First sync and migration of existing data
 
@@ -53,7 +53,7 @@ The previous version saved data in this browser's `localStorage`. Keep a JSON ba
 
 ## Local use
 
-Open `index.html` in a modern browser or run `python -m http.server 8000` in this folder and visit `http://localhost:8000`. Cloud sync requires a configured Supabase project and a URL allowed in Supabase Authentication settings.
+Open `index.html` in a modern browser or run `python -m http.server 8000` in this folder and visit `http://localhost:8000`. Cloud sync requires a configured Supabase project and a URL allowed in Supabase Authentication settings. The login gate stays visible until a Supabase session is confirmed; dashboard navigation is collapsed into a mobile menu on narrow screens.
 
 ## Files
 
