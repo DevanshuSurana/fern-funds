@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#24443b">
+  <title>Fern & Funds — Personal Finance Planner</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">f.</div><div><strong>fern & funds</strong><small>your personal money space</small></div></div>
+      <div class="side-label">WORKSPACE</div>
+      <button class="nav-item active" data-view="overview"><span>◫</span> Overview</button>
+      <button class="nav-item" data-view="monthly"><span>▦</span> Monthly planner</button>
+      <button class="nav-item" data-view="transactions"><span>↕</span> Transactions</button>
+      <button class="nav-item" data-view="goals"><span>◎</span> Savings goals</button>
+      <button class="nav-item" data-view="cards"><span>▤</span> Credit cards</button>
+      <div class="sidebar-bottom">
+        <div class="mini-goal"><span class="eyebrow">YOUR NORTH STAR</span><strong>Tuition, first.</strong><p>Small, consistent decisions add up.</p></div>
+        <button class="nav-item" data-view="settings"><span>⚙</span> Data & settings</button>
+        <div class="privacy-note">Your records stay in this browser unless you export them.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><div class="eyebrow" id="today-label">YOUR MONEY, WITH INTENTION</div><h1 id="page-title">Good planning, less money stress.</h1></div>
+        <div class="top-actions"><button class="button secondary" id="export-top">Export backup</button><button class="avatar" title="Personal planner">FF</button></div>
+      </header>
+
+      <section id="view-overview" class="view active">
+        <div class="welcome-row"><div><div class="eyebrow">YOUR FINANCIAL SNAPSHOT</div><h2>Make room for what matters.</h2><p class="muted">A clear view of your money today and the goals ahead.</p></div><div class="month-chip"><span class="dot"></span><span id="current-month-label"></span></div></div>
+        <div class="stat-grid">
+          <article class="stat-card hero-stat"><div class="stat-top"><span>Cash savings</span><span class="stat-icon">↗</span></div><div class="stat-value" id="stat-cash">$8,364</div><div class="stat-foot">Starting balance — edit in settings</div></article>
+          <article class="stat-card"><div class="stat-top"><span>Tuition goal</span><span class="stat-icon">✳</span></div><div class="stat-value" id="stat-tuition">$12,000</div><div class="progress-track"><div id="tuition-progress" class="progress-fill"></div></div><div class="stat-foot" id="tuition-progress-label">0% funded</div></article>
+          <article class="stat-card"><div class="stat-top"><span>This month in</span><span class="stat-icon">↓</span></div><div class="stat-value" id="stat-income">$0</div><div class="stat-foot">Income recorded this month</div></article>
+          <article class="stat-card"><div class="stat-top"><span>This month out</span><span class="stat-icon">↑</span></div><div class="stat-value" id="stat-expenses">$0</div><div class="stat-foot">Expenses recorded this month</div></article>
+        </div>
+        <div class="content-grid">
+          <article class="panel month-panel"><div class="panel-head"><div><div class="eyebrow">MONTH AT A GLANCE</div><h3 id="overview-month-title">October 2026</h3></div><div class="month-arrows"><button id="prev-month" aria-label="Previous month">‹</button><button id="next-month" aria-label="Next month">›</button></div></div>
+            <div class="month-summary"><div><span class="muted">Income</span><strong class="green-text" id="month-income">$0</strong></div><div><span class="muted">Expenses</span><strong id="month-expenses">$0</strong></div><div><span class="muted">Net cash flow</span><strong id="month-net">$0</strong></div></div>
+            <div class="panel-divider"></div><div class="panel-head compact"><h4>Recent activity</h4><button class="text-button" data-goto="transactions">View all ↗</button></div><div id="recent-transactions" class="recent-list"></div>
+          </article>
+          <article class="panel goal-panel"><div class="eyebrow">THE BIG PICTURE</div><h3>Goals worth saving for.</h3><p class="muted small">Your goals are reminders of why every dollar matters.</p>
+            <div class="goal-line"><div class="goal-icon tuition">✦</div><div class="goal-info"><div class="goal-title"><strong>August tuition</strong><span id="goal-tuition-pct">69.7%</span></div><div class="progress-track"><div id="goal-tuition-bar" class="progress-fill"></div></div><small id="goal-tuition-copy">$8,364 of $12,000</small></div></div>
+            <div class="goal-line"><div class="goal-icon travel">✈</div><div class="goal-info"><div class="goal-title"><strong>NYC trip</strong><span id="goal-nyc-pct">0%</span></div><div class="progress-track gold-track"><div id="goal-nyc-bar" class="progress-fill gold-fill"></div></div><small id="goal-nyc-copy">$0 of $1,100</small></div></div>
+            <div class="goal-line"><div class="goal-icon india">⌁</div><div class="goal-info"><div class="goal-title"><strong>India trip</strong><span id="goal-india-pct">0%</span></div><div class="progress-track rose-track"><div id="goal-india-bar" class="progress-fill rose-fill"></div></div><small id="goal-india-copy">$0 of $1,200</small></div></div>
+            <button class="button full-width" data-goto="goals">Manage savings goals</button>
+          </article>
+        </div>
+        <div class="bottom-note"><span class="note-star">✳</span><div><strong>A gentle reminder</strong><p>Your credit limit is not your budget. Protect tuition first, keep a cash buffer, and plan travel from money you actually have.</p></div></div>
+      </section>
+
+      <section id="view-monthly" class="view">
+        <div class="section-intro"><div><div class="eyebrow">PLAN WITH PURPOSE</div><h2>Monthly planner</h2><p class="muted">Give every month a plan, then compare it with what actually happened.</p></div><div class="month-select-wrap"><button id="monthly-prev" class="round-button">‹</button><select id="month-select" aria-label="Select month"></select><button id="monthly-next" class="round-button">›</button></div></div>
+        <div class="stat-grid three">
+          <article class="stat-card"><div class="stat-top"><span>Planned income</span><span class="stat-icon">↓</span></div><div class="stat-value" id="planned-income">$0</div></article>
+          <article class="stat-card"><div class="stat-top"><span>Planned spending</span><span class="stat-icon">↑</span></div><div class="stat-value" id="planned-expenses">$0</div></article>
+          <article class="stat-card"><div class="stat-top"><span>Planned leftover</span><span class="stat-icon">✳</span></div><div class="stat-value" id="planned-leftover">$0</div></article>
+        </div>
+        <article class="panel"><div class="panel-head"><div><div class="eyebrow">MONTHLY PLAN</div><h3>Budget categories</h3></div><button class="button secondary" id="copy-last-month">Copy previous month</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Category</th><th>Planned</th><th>Actual</th><th>Difference</th></tr></thead><tbody id="budget-rows"></tbody></table></div>
+          <div class="panel-footnote">Edit planned amounts directly. Actual amounts are calculated from your transaction log.</div>
+        </article>
+      </section>
+
+      <section id="view-transactions" class="view">
+        <div class="section-intro"><div><div class="eyebrow">THE DETAILS MATTER</div><h2>Transactions</h2><p class="muted">Keep a simple record of where your money comes from and where it goes.</p></div><button class="button" id="add-transaction">＋ Add transaction</button></div>
+        <article class="panel">
+          <div class="filters"><div class="search-box"><span>⌕</span><input id="transaction-search" placeholder="Search descriptions or categories"></div><select id="transaction-month-filter"><option value="all">All months</option></select><select id="transaction-type-filter"><option value="all">All types</option><option>Income</option><option>Expense</option><option>Card payment</option><option>Transfer</option></select></div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th>Account</th><th class="align-right">Amount</th><th></th></tr></thead><tbody id="transaction-rows"></tbody></table></div>
+          <div id="empty-transactions" class="empty-state"><div class="empty-icon">↕</div><strong>No transactions yet</strong><p>Add your first paycheck or expense to start tracking.</p><button class="button" id="empty-add">Add a transaction</button></div>
+        </article>
+      </section>
+
+      <section id="view-goals" class="view">
+        <div class="section-intro"><div><div class="eyebrow">SAVE FOR YOUR NEXT CHAPTER</div><h2>Savings goals</h2><p class="muted">Track your tuition and travel funds without losing sight of your priorities.</p></div></div>
+        <div class="goals-grid" id="goals-grid"></div>
+        <article class="panel"><div class="panel-head"><div><div class="eyebrow">YOUR PLAN</div><h3>What needs funding?</h3></div></div><div id="goal-summary" class="goal-summary"></div></article>
+      </section>
+
+      <section id="view-cards" class="view">
+        <div class="section-intro"><div><div class="eyebrow">BORROW WITH INTENTION</div><h2>Credit cards</h2><p class="muted">Track balances and due dates. Keep the cost of borrowing visible.</p></div><button class="button" id="save-cards">Save card details</button></div>
+        <div class="cards-grid" id="cards-grid"></div>
+        <div class="bottom-note warning"><span class="note-star">!</span><div><strong>Interest is expensive</strong><p>Card APRs are annual rates. If a balance is carried, interest depends on the issuer's terms and daily balance. Pay at least the minimum on time and avoid new carried balances.</p></div></div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="section-intro"><div><div class="eyebrow">MAKE IT YOURS</div><h2>Data & settings</h2><p class="muted">Set your starting numbers and control how your data is saved.</p></div></div>
+        <div class="settings-grid">
+          <article class="panel"><div class="eyebrow">YOUR BASELINE</div><h3>Financial settings</h3><form id="settings-form" class="form-grid">
+            <label>Starting cash savings ($)<input name="startingCash" type="number" min="0" step=".01" required></label>
+            <label>Tuition target ($)<input name="tuitionTarget" type="number" min="0" step=".01" required></label>
+            <label>Tuition due date<input name="tuitionDate" type="date" required></label>
+            <label>Usual biweekly take-home ($)<input name="paycheck" type="number" min="0" step=".01" required></label>
+            <label>NYC trip budget ($)<input name="nycTarget" type="number" min="0" step=".01" required></label>
+            <label>India trip budget ($)<input name="indiaTarget" type="number" min="0" step=".01" required></label>
+            <button class="button" type="submit">Save settings</button>
+          </form></article>
+          <article class="panel cloud-panel"><div class="eyebrow">CLOUD SYNC</div><h3>Sync across your devices</h3><p class="muted small">Sign in with the same email on each device. Your financial records will be stored in your private cloud account.</p>
+            <div id="cloud-status" class="cloud-status" role="status">Cloud sync is not configured yet.</div>
+            <form id="cloud-auth-form" class="form-grid cloud-auth-form">
+              <label class="full-span">Email address<input id="cloud-email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+              <label class="full-span">Password<input id="cloud-password" type="password" autocomplete="current-password" minlength="8" required placeholder="At least 8 characters"></label>
+              <div class="cloud-buttons full-span"><button class="button" type="submit" id="cloud-signin">Sign in</button><button class="button secondary" type="button" id="cloud-signup">Create account</button></div>
+            </form>
+            <div id="cloud-account-actions" class="settings-actions" hidden><button class="button full-width" id="cloud-sync-now">Sync now</button><button class="button secondary full-width" id="cloud-signout">Sign out</button></div>
+            <p class="muted small">Use a unique password. If email confirmation is enabled in Supabase, confirm the signup email before signing in. Cloud sync requires the setup described in README.md.</p>
+          </article>
+          <article class="panel"><div class="eyebrow">YOUR RECORDS</div><h3>Backup & restore</h3><p class="muted small">Download a full backup regularly. Import it to restore your records or keep an offline copy.</p>
+            <div class="settings-actions"><button class="button full-width" id="export-json">↓ Download full JSON backup</button><button class="button secondary full-width" id="export-csv">↓ Export transactions as CSV</button><label class="button secondary full-width file-button">↑ Import JSON backup<input type="file" id="import-json" accept=".json,application/json"></label><button class="button danger-outline full-width" id="reset-data">Reset all app data</button></div>
+            <div class="privacy-box"><strong>How storage works</strong><p>Records are saved locally and, after you sign in and configure Supabase, synced to your private cloud row. Keep a JSON backup as an extra recovery option. Never share your password or upload backups to a public repository.</p></div>
+          </article>
+        </div>
+      </section>
+
+      <footer class="footer"><span>FERN & FUNDS</span><span>Designed for clarity, built for your goals.</span></footer>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="transaction-modal" aria-hidden="true">
+    <div class="modal">
+      <div class="modal-head"><div><div class="eyebrow">ADD TO YOUR MONEY LOG</div><h3>New transaction</h3></div><button class="close-modal" id="close-modal" aria-label="Close">×</button></div>
+      <form id="transaction-form" class="form-grid">
+        <label>Date<input name="date" type="date" required></label>
+        <label>Type<select name="type" required><option>Expense</option><option>Income</option><option>Card payment</option><option>Transfer</option></select></label>
+        <label>Description<input name="description" maxlength="100" placeholder="e.g. Grocery run" required></label>
+        <label>Category<select name="category" required><option>Rent</option><option>Utilities</option><option>Internet</option><option>Groceries</option><option>Miscellaneous</option><option>Paycheck</option><option>Tuition</option><option>NYC trip</option><option>India trip</option><option>Credit card</option><option>Transportation</option><option>Health</option><option>Entertainment</option><option>Other</option></select></label>
+        <label>Amount ($)<input name="amount" type="number" min=".01" step=".01" required placeholder="0.00"></label>
+        <label>Account<select name="account"><option>Checking</option><option>Savings</option><option>Cash</option><option>Credit card 1</option><option>Credit card 2</option></select></label>
+        <label class="full-span">Notes (optional)<input name="notes" maxlength="250" placeholder="Anything useful to remember"></label>
+        <div class="modal-actions full-span"><button class="button secondary" type="button" id="cancel-modal">Cancel</button><button class="button" type="submit">Save transaction</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
