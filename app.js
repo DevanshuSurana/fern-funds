@@ -102,6 +102,14 @@
     }
     return structuredClone(DEFAULT);
   }
+  function scheduleCloudSave(delay = 700) {
+    if (!cloudUser || !cloudClient || !cloudReady) return;
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = setTimeout(() => {
+      cloudSaveTimer = null;
+      pushCloudData(false);
+    }, delay);
+  }
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
@@ -114,8 +122,7 @@
     localRevision++;
     if (cloudUser && cloudClient && cloudReady) {
       cloudDirty = true;
-      clearTimeout(cloudSaveTimer);
-      cloudSaveTimer = setTimeout(() => pushCloudData(false), 700);
+      scheduleCloudSave(700);
       setCloudStatus(
         "Changes saved on this device. Syncing to cloud…",
         "pending",
@@ -287,14 +294,18 @@
       setCloudStatus("Sign in to sync data.", "error");
       return;
     }
-    // Never pull an older cloud snapshot over edits that have not been uploaded yet.
-    if (cloudDirty || cloudSaveTimer) {
+    // Never pull while a write is active or local edits are waiting to be saved.
+    if (cloudWriteInProgress) {
+      if (cloudDirty) scheduleCloudSave(500);
+      return;
+    }
+    if (cloudDirty) {
       clearTimeout(cloudSaveTimer);
       cloudSaveTimer = null;
       await pushCloudData(manual);
       return;
     }
-    if (cloudWriteInProgress) return;
+    const revisionBeforePull = localRevision;
     cloudWriteInProgress = true;
     try {
       const { data: row, error } = await cloudClient
@@ -303,10 +314,9 @@
         .eq("user_id", cloudUser.id)
         .maybeSingle();
       if (error) throw error;
-      // A user may edit while the request is in flight. If so, preserve local changes and upload them.
-      if (cloudDirty) {
-        cloudWriteInProgress = false;
-        await pushCloudData(manual);
+      // A delete/edit made while the read was in flight must win over the stale response.
+      if (cloudDirty || localRevision !== revisionBeforePull) {
+        cloudDirty = true;
         return;
       }
       const localRaw = localStorage.getItem(KEY);
@@ -354,14 +364,10 @@
             "connected",
           );
         } else {
-          cloudWriteInProgress = false;
-          await pushCloudData(true);
-          return;
+          cloudDirty = true;
         }
       } else {
-        cloudWriteInProgress = false;
-        await pushCloudData(true);
-        return;
+        cloudDirty = true;
       }
       cloudReady = true;
     } catch (e) {
@@ -374,13 +380,14 @@
       );
     } finally {
       cloudWriteInProgress = false;
+      if (cloudDirty) scheduleCloudSave(250);
     }
   }
   async function pushCloudData(manual) {
     if (!cloudUser || !cloudClient) return;
     if (cloudWriteInProgress) {
-      // A save is already in flight; leave the dirty flag set so its completion schedules another save.
       cloudDirty = true;
+      scheduleCloudSave(500);
       return;
     }
     cloudWriteInProgress = true;
@@ -408,10 +415,7 @@
           "connected",
         );
       } else {
-        // Local state changed during the request; immediately schedule the newer snapshot.
         cloudDirty = true;
-        clearTimeout(cloudSaveTimer);
-        cloudSaveTimer = setTimeout(() => pushCloudData(false), 250);
         setCloudStatus("A newer change is waiting to sync…", "pending");
       }
       if (manual && !cloudDirty) toast("Cloud sync complete");
@@ -426,6 +430,7 @@
       if (manual) toast("Cloud sync failed. Check the status message.");
     } finally {
       cloudWriteInProgress = false;
+      if (cloudDirty) scheduleCloudSave(300);
     }
   }
   function toast(msg) {
