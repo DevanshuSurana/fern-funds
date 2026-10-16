@@ -482,6 +482,11 @@
   function txsForMonth(m) {
     return data.transactions.filter((t) => monthOf(t.date) === m);
   }
+  function compassIncomeForMonth(m) {
+    return txsForMonth(m)
+      .filter((t) => t.type === "Income" && /compass\s*group/i.test(t.description || ""))
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+  }
   function sums(m) {
     const ts = txsForMonth(m);
     return {
@@ -574,7 +579,7 @@
     $("#tuition-progress").style.width = `${funded}%`;
     $("#tuition-progress-label").textContent =
       `${funded.toFixed(1)}% funded toward tuition`;
-    $("#stat-income").textContent = fmt(m.income);
+    $("#stat-income").textContent = fmt(compassIncomeForMonth(selectedMonth));
     $("#stat-expenses").textContent = fmt(m.expenses);
     $("#overview-month-title").textContent = monthLabel(selectedMonth);
     $("#month-income").textContent = fmt(m.income);
