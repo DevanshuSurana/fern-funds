@@ -182,17 +182,6 @@
     });
     $("#gate-signup").addEventListener("click", () => signUp("gate"));
     $("#cloud-signout").addEventListener("click", signOut);
-    $("#card-transaction-list").addEventListener("click", (event) => {
-      const button = event.target.closest("[data-delete-card-tx]");
-      if (!button) return;
-      const id = button.dataset.deleteCardTx;
-      if (!data.cardTransactions.some(t => t.id === id)) return;
-      data.cardTransactions = data.cardTransactions.filter(t => t.id !== id);
-      data.transactions = data.transactions.filter(t => t.cardTransactionId !== id);
-      save();
-      render();
-      toast("Card transaction deleted");
-    });
     $("#cloud-sync-now").addEventListener("click", () => syncCloud(true));
     cloudClient.auth.getSession().then(({ data: sessionData, error }) => {
       if (error) {
@@ -812,7 +801,7 @@
     const prior = card ? Number(card.balance || 0) + data.cardTransactions.filter(t => t.card === cardName && monthOf(t.date) < month).reduce((n,t) => n + (["Purchase","Fee","Interest"].includes(t.type) ? 1 : -1) * Number(t.amount), 0) : 0;
     const statementBalance = prior + total("Purchase") + total("Fee") + total("Interest") - total("Refund") - total("Payment");
     $("#statement-summary").innerHTML = `<div><span>Purchases</span><strong>${fmt(total("Purchase"))}</strong></div><div><span>Payments & refunds</span><strong>${fmt(total("Payment") + total("Refund"))}</strong></div><div><span>Fees & interest</span><strong>${fmt(total("Fee") + total("Interest"))}</strong></div><div><span>Statement balance</span><strong>${fmt(statementBalance)}</strong></div><div><span>Minimum due</span><strong>${fmt(card?.minPayment || 0)}</strong></div><div><span>Payment due date</span><strong>${esc(card?.dueDate || "Not set")}</strong></div>`;
-    $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th><th></th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td><td><button class="text-button" data-delete-card-tx="${esc(t.id)}" title="Delete card transaction">Delete</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
+    $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th><th></th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td><td><button class="text-button" data-edit-card-tx="${esc(t.id)}">Edit</button> <button class="text-button" data-delete-card-tx="${esc(t.id)}" title="Delete card transaction">Delete</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
     $("#statement-card").onchange = renderCards;
     $("#statement-month").onchange = renderCards;
     $("#save-cards").onclick = () => {
@@ -942,26 +931,74 @@
     $("#add-transaction").onclick = showModal;
     $("#empty-add").onclick = showModal;
     const cardModal = $("#card-transaction-modal"), cardForm = $("#card-transaction-form");
+    const cardReview = $("#card-tx-review"), cardReviewButton = $("#review-card-tx");
+    let editingCardTransactionId = null, pendingCardTransaction = null;
+    const cardFields = () => [...cardForm.querySelectorAll("label")];
     const closeCardModal = () => { cardModal.classList.remove("open"); cardModal.setAttribute("aria-hidden", "true"); };
-    $("#add-card-transaction").onclick = () => {
+    const setCardFormStep = (review) => {
+      cardFields().forEach(label => label.classList.toggle("hidden", review));
+      cardReview.classList.toggle("hidden", !review);
+      cardReviewButton.classList.toggle("hidden", review);
+    };
+    const openCardModal = (transaction = null) => {
       cardForm.reset();
-      cardForm.elements.date.value = todayISO();
-      cardForm.elements.card.innerHTML = data.cards.map(c => `<option>${esc(c.name)}</option>`).join("");
+      editingCardTransactionId = transaction?.id || null;
+      pendingCardTransaction = null;
+      cardForm.elements.card.innerHTML = data.cards.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
+      cardForm.elements.date.value = transaction?.date || todayISO();
+      cardForm.elements.type.value = transaction?.type || "Purchase";
+      cardForm.elements.card.value = transaction?.card || $("#statement-card").value || data.cards[0]?.name || "";
+      cardForm.elements.description.value = transaction?.description || "";
+      cardForm.elements.category.value = transaction?.category || "Groceries";
+      cardForm.elements.amount.value = transaction?.amount ?? "";
+      cardForm.elements.notes.value = transaction?.notes || "";
+      $("#card-modal-title").textContent = transaction ? "Edit card transaction" : "New card transaction";
+      setCardFormStep(false);
       cardModal.classList.add("open");
       cardModal.setAttribute("aria-hidden", "false");
     };
+    $("#add-card-transaction").onclick = () => openCardModal();
     $("#close-card-modal").onclick = $("#cancel-card-modal").onclick = closeCardModal;
     cardModal.addEventListener("click", e => { if (e.target === cardModal) closeCardModal(); });
+    $("#back-card-tx").onclick = () => { pendingCardTransaction = null; setCardFormStep(false); };
     cardForm.onsubmit = e => {
       e.preventDefault();
-      const fd = new FormData(cardForm), type = fd.get("type"), cardName = fd.get("card"), amount = Number(fd.get("amount"));
-      const t = { id: newId(), date: fd.get("date"), type, card: cardName, description: fd.get("description").trim(), category: fd.get("category"), amount, notes: fd.get("notes").trim() };
-      if (!t.description || amount <= 0 || !t.card) return;
-      data.cardTransactions.push(t);
-      if (type === "Payment") data.transactions.push({ id: newId(), date: t.date, type: "Card payment", description: `${cardName} payment`, category: "Credit card", amount, account: "Checking", notes: `Card payment · ${t.description}`, cardTransactionId: t.id });
-      selectedMonth = monthOf(t.date);
-      save(); closeCardModal(); render(); toast("Card transaction saved");
+      if (!cardForm.reportValidity()) return;
+      const fd = new FormData(cardForm);
+      pendingCardTransaction = { id: editingCardTransactionId || newId(), date: fd.get("date"), type: fd.get("type"), card: fd.get("card"), description: fd.get("description").trim(), category: fd.get("category"), amount: Number(fd.get("amount")), notes: fd.get("notes").trim() };
+      $("#card-tx-review-details").innerHTML = `<div><span>Card</span><strong>${esc(pendingCardTransaction.card)}</strong></div><div><span>Type</span><strong>${esc(pendingCardTransaction.type)}</strong></div><div><span>Date</span><strong>${esc(pendingCardTransaction.date)}</strong></div><div><span>Merchant</span><strong>${esc(pendingCardTransaction.description)}</strong></div><div><span>Category</span><strong>${esc(pendingCardTransaction.category)}</strong></div><div><span>Amount</span><strong>${fmt(pendingCardTransaction.amount)}</strong></div>`;
+      setCardFormStep(true);
     };
+    $("#confirm-card-tx").onclick = () => {
+      const t = pendingCardTransaction;
+      if (!t) return;
+      const existingIndex = data.cardTransactions.findIndex(item => item.id === t.id);
+      if (existingIndex < 0) data.cardTransactions.push(t);
+      else data.cardTransactions[existingIndex] = t;
+      const linked = data.transactions.find(item => item.cardTransactionId === t.id);
+      if (t.type === "Payment") {
+        const payment = { id: linked?.id || newId(), date: t.date, type: "Card payment", description: `${t.card} payment`, category: "Credit card", amount: t.amount, account: "Checking", notes: `Card payment · ${t.description}`, cardTransactionId: t.id };
+        if (linked) Object.assign(linked, payment); else data.transactions.push(payment);
+      } else if (linked) data.transactions = data.transactions.filter(item => item.cardTransactionId !== t.id);
+      selectedMonth = monthOf(t.date);
+      const edited = editingCardTransactionId !== null;
+      save(); closeCardModal(); render(); toast(edited ? "Card transaction updated" : "Card transaction saved");
+    };
+    $("#card-transaction-list").addEventListener("click", event => {
+      const editButton = event.target.closest("[data-edit-card-tx]");
+      if (editButton) {
+        const transaction = data.cardTransactions.find(item => item.id === editButton.dataset.editCardTx);
+        if (transaction) openCardModal(transaction);
+        return;
+      }
+      const deleteButton = event.target.closest("[data-delete-card-tx]");
+      if (!deleteButton) return;
+      const id = deleteButton.dataset.deleteCardTx;
+      if (!data.cardTransactions.some(item => item.id === id)) return;
+      data.cardTransactions = data.cardTransactions.filter(item => item.id !== id);
+      data.transactions = data.transactions.filter(item => item.cardTransactionId !== id);
+      save(); render(); toast("Card transaction deleted");
+    });
     $("#close-modal").onclick = hideModal;
     $("#cancel-modal").onclick = hideModal;
     $("#transaction-modal").addEventListener("click", (e) => {
