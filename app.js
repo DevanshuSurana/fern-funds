@@ -798,7 +798,19 @@
     const prior = card ? Number(card.balance || 0) + data.cardTransactions.filter(t => t.card === cardName && monthOf(t.date) < month).reduce((n,t) => n + (["Purchase","Fee","Interest"].includes(t.type) ? 1 : -1) * Number(t.amount), 0) : 0;
     const statementBalance = prior + total("Purchase") + total("Fee") + total("Interest") - total("Refund") - total("Payment");
     $("#statement-summary").innerHTML = `<div><span>Purchases</span><strong>${fmt(total("Purchase"))}</strong></div><div><span>Payments & refunds</span><strong>${fmt(total("Payment") + total("Refund"))}</strong></div><div><span>Fees & interest</span><strong>${fmt(total("Fee") + total("Interest"))}</strong></div><div><span>Statement balance</span><strong>${fmt(statementBalance)}</strong></div><div><span>Minimum due</span><strong>${fmt(card?.minPayment || 0)}</strong></div><div><span>Payment due date</span><strong>${esc(card?.dueDate || "Not set")}</strong></div>`;
-    $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
+    $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th><th></th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td><td><button class="text-button" data-delete-card-tx="${esc(t.id)}" title="Delete card transaction">Delete</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
+    $$('[data-delete-card-tx]').forEach(button => {
+      button.onclick = () => {
+        const id = button.dataset.deleteCardTx;
+        const transaction = data.cardTransactions.find(t => t.id === id);
+        if (!transaction || !confirm("Delete this card transaction?")) return;
+        data.cardTransactions = data.cardTransactions.filter(t => t.id !== id);
+        data.transactions = data.transactions.filter(t => t.cardTransactionId !== id);
+        save();
+        render();
+        toast("Card transaction deleted");
+      };
+    });
     $("#statement-card").onchange = renderCards;
     $("#statement-month").onchange = renderCards;
     $("#save-cards").onclick = () => {
