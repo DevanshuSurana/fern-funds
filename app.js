@@ -32,6 +32,7 @@
     goals: { tuition: 0, nyc: 0, india: 0 },
     plans: {},
     transactions: [],
+    cardTransactions: [],
   };
   const CATEGORIES = [
     "Rent",
@@ -59,14 +60,14 @@
     }).format(Number(n) || 0);
   const monthLabel = (m) => {
     const [y, mo] = m.split("-").map(Number);
-return new Date(y, mo - 1, 1).toLocaleDateString("en-US", {
+    return new Date(y, mo - 1, 1).toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",
     });
   };
   const todayISO = () => {
     const d = new Date();
-return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
   const monthOf = (d) => String(d || "").slice(0, 7);
   const newId = () =>
@@ -87,7 +88,7 @@ return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-return {
+        return {
           ...structuredClone(DEFAULT),
           ...parsed,
           settings: { ...DEFAULT.settings, ...parsed.settings },
@@ -95,12 +96,13 @@ return {
           goals: parsed.goals || {},
           plans: parsed.plans || {},
           transactions: parsed.transactions || [],
+          cardTransactions: parsed.cardTransactions || [],
         };
       }
     } catch (e) {
       console.warn("Could not load local data", e);
     }
-return structuredClone(DEFAULT);
+    return structuredClone(DEFAULT);
   }
   function scheduleCloudSave(delay = 700) {
     if (!cloudUser || !cloudClient || !cloudReady) return;
@@ -166,17 +168,17 @@ return structuredClone(DEFAULT);
       $$(
         "#gate-auth-form input, #gate-auth-form button, #cloud-auth-form input, #cloud-auth-form button",
       ).forEach((el) => (el.disabled = true));
-return;
+      return;
     }
     cloudClient = window.supabase.createClient(cfg.url, cfg.anonKey);
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-await signIn("cloud");
+      await signIn("cloud");
     });
     $("#cloud-signup").addEventListener("click", () => signUp("cloud"));
     $("#gate-auth-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-await signIn("gate");
+      await signIn("gate");
     });
     $("#gate-signup").addEventListener("click", () => signUp("gate"));
     $("#cloud-signout").addEventListener("click", signOut);
@@ -184,7 +186,7 @@ await signIn("gate");
     cloudClient.auth.getSession().then(({ data: sessionData, error }) => {
       if (error) {
         showLogin("Could not check sign-in session: " + error.message, "error");
-return;
+        return;
       }
       if (sessionData.session) handleSignedIn(sessionData.session.user);
       else showLogin("Sign in or create an account to open your dashboard.");
@@ -199,20 +201,20 @@ return;
         showLogin("Signed out. Sign in to reopen your dashboard.");
       }
     });
-// Refresh when returning to this tab or switching back to the app on another device.
+    // Refresh when returning to this tab or switching back to the app on another device.
     window.addEventListener("focus", () => {
       if (cloudUser && cloudReady) syncCloud(false);
     });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && cloudUser && cloudReady) syncCloud(false);
     });
-// Periodic pull keeps an already-open device reasonably fresh when another device changes data.
+    // Periodic pull keeps an already-open device reasonably fresh when another device changes data.
     window.setInterval(() => {
       if (!document.hidden && cloudUser && cloudReady) syncCloud(false);
     }, 30000);
   }
   function authFields(source) {
-return source === "gate"
+    return source === "gate"
       ? {
           email: $("#gate-email").value.trim(),
           password: $("#gate-password").value,
@@ -229,7 +231,7 @@ return source === "gate"
         "Enter a valid email and a password with at least 8 characters.",
         "error",
       );
-return;
+      return;
     }
     setCloudStatus("Creating account…");
     const { data: result, error } = await cloudClient.auth.signUp({
@@ -239,7 +241,7 @@ return;
     });
     if (error) {
       setCloudStatus("Account creation failed: " + error.message, "error");
-return;
+      return;
     }
     if (result.session) await handleSignedIn(result.user);
     else
@@ -252,7 +254,7 @@ return;
     const { email, password } = authFields(source);
     if (!email || !password) {
       setCloudStatus("Enter your email and password to sign in.", "error");
-return;
+      return;
     }
     setCloudStatus("Signing in…");
     const { data: result, error } = await cloudClient.auth.signInWithPassword({
@@ -261,9 +263,9 @@ return;
     });
     if (error) {
       setCloudStatus("Sign-in failed: " + error.message, "error");
-return;
+      return;
     }
-await handleSignedIn(result.user);
+    await handleSignedIn(result.user);
   }
   async function signOut() {
     if (
@@ -271,7 +273,7 @@ await handleSignedIn(result.user);
         "Sign out of cloud sync on this device? Your local copy will remain on this device.",
       )
     )
-return;
+      return;
     const { error } = await cloudClient.auth.signOut();
     if (error) setCloudStatus("Sign-out failed: " + error.message, "error");
   }
@@ -286,24 +288,24 @@ return;
       "Signed in as " + user.email + ". Checking cloud data…",
       "pending",
     );
-await syncCloud(false);
+    await syncCloud(false);
     showDashboard();
   }
   async function syncCloud(manual) {
     if (!cloudUser || !cloudClient) {
       setCloudStatus("Sign in to sync data.", "error");
-return;
+      return;
     }
-// Never pull while a write is active or local edits are waiting to be saved.
+    // Never pull while a write is active or local edits are waiting to be saved.
     if (cloudWriteInProgress) {
       if (cloudDirty) scheduleCloudSave(500);
-return;
+      return;
     }
     if (cloudDirty) {
       clearTimeout(cloudSaveTimer);
       cloudSaveTimer = null;
-await pushCloudData(manual);
-return;
+      await pushCloudData(manual);
+      return;
     }
     const revisionBeforePull = localRevision;
     cloudWriteInProgress = true;
@@ -314,16 +316,16 @@ return;
         .eq("user_id", cloudUser.id)
         .maybeSingle();
       if (error) throw error;
-// A delete/edit made while the read was in flight must win over the stale response.
+      // A delete/edit made while the read was in flight must win over the stale response.
       if (cloudDirty || localRevision !== revisionBeforePull) {
         cloudDirty = true;
-return;
+        return;
       }
       const localRaw = localStorage.getItem(KEY);
       const localHasData = (() => {
         try {
           const x = JSON.parse(localRaw || "{}");
-return (
+          return (
             (x.transactions || []).length > 0 ||
             Object.keys(x.plans || {}).length > 0 ||
             Object.values(x.goals || {}).some((v) => Number(v) > 0) ||
@@ -331,7 +333,7 @@ return (
             JSON.stringify(x.settings) !== JSON.stringify(DEFAULT.settings)
           );
         } catch {
-return false;
+          return false;
         }
       })();
       if (row?.data) {
@@ -353,6 +355,7 @@ return false;
             goals: row.data.goals || {},
             plans: row.data.plans || {},
             transactions: row.data.transactions || [],
+            cardTransactions: row.data.cardTransactions || [],
           };
           localStorage.setItem(KEY, JSON.stringify(data));
           render();
@@ -388,7 +391,7 @@ return false;
     if (cloudWriteInProgress) {
       cloudDirty = true;
       scheduleCloudSave(500);
-return;
+      return;
     }
     cloudWriteInProgress = true;
     const snapshot = structuredClone(data);
@@ -454,7 +457,7 @@ return;
     );
   }
   function amountClass(t) {
-return t === "Income"
+    return t === "Income"
       ? "income"
       : t === "Expense"
         ? "expense"
@@ -466,19 +469,19 @@ return t === "Income"
     if (t.type === "Income") return Number(t.amount);
     if (t.type === "Card payment") return -Number(t.amount);
     if (t.type === "Expense")
-return String(t.account || "")
+      return String(t.account || "")
         .toLowerCase()
         .startsWith("credit card")
         ? 0
         : -Number(t.amount);
-return 0;
+    return 0;
   }
   function txsForMonth(m) {
-return data.transactions.filter((t) => monthOf(t.date) === m);
+    return data.transactions.filter((t) => monthOf(t.date) === m);
   }
   function sums(m) {
     const ts = txsForMonth(m);
-return {
+    return {
       income: ts
         .filter((t) => t.type === "Income")
         .reduce((s, t) => s + Number(t.amount), 0),
@@ -510,7 +513,7 @@ return {
           Other: 0,
         },
       };
-return data.plans[m];
+    return data.plans[m];
   }
   function allMonths() {
     const months = [];
@@ -520,7 +523,7 @@ return data.plans[m];
         if (key >= MONTH_START && key <= "2027-12") months.push(key);
       }
     }
-return months;
+    return months;
   }
   function nav(view) {
     currentView = view;
@@ -644,7 +647,7 @@ return months;
             actualCat = txsForMonth(selectedMonth)
               .filter((t) => t.type === "Expense" && t.category === cat)
               .reduce((s, t) => s + Number(t.amount), 0);
-return `<tr><td>${esc(cat)}</td><td><input data-plan-cat="${esc(cat)}" type="number" min="0" step=".01" value="${planned}"></td><td>${fmt(actualCat)}</td><td class="${planned - actualCat >= 0 ? "positive" : "negative"}">${fmt(planned - actualCat)}</td></tr>`;
+          return `<tr><td>${esc(cat)}</td><td><input data-plan-cat="${esc(cat)}" type="number" min="0" step=".01" value="${planned}"></td><td>${fmt(actualCat)}</td><td class="${planned - actualCat >= 0 ? "positive" : "negative"}">${fmt(planned - actualCat)}</td></tr>`;
         })
         .join("");
     $$("[data-plan-income]").forEach((el) =>
@@ -747,7 +750,7 @@ return `<tr><td>${esc(cat)}</td><td><input data-plan-cat="${esc(cat)}" type="num
     $("#goals-grid").innerHTML = goals
       .map((o) => {
         const pct = o.target ? Math.min(100, (o.saved / o.target) * 100) : 0;
-return `<article class="goal-card"><div class="goal-icon ${o.cls}">${o.icon}</div><h3>${o.name}</h3><div class="goal-desc">${o.desc}</div><div class="goal-amount">${fmt(o.saved)}</div><div class="goal-target">of ${fmt(o.target)} · ${pct.toFixed(1)}% funded</div><div class="progress-track ${o.cls === "travel" ? "gold-track" : o.cls === "india" ? "rose-track" : ""}"><div class="progress-fill ${o.cls === "travel" ? "gold-fill" : o.cls === "india" ? "rose-fill" : ""}" style="width:${pct}%"></div></div><label>Add to goal savings ($)<input type="number" min="0" step=".01" id="goal-add-${o.key}" placeholder="0.00"></label><button class="button" data-add-goal="${o.key}">Record savings</button><small class="muted" style="display:block;margin-top:10px">Target / due: ${esc(o.due)}</small></article>`;
+        return `<article class="goal-card"><div class="goal-icon ${o.cls}">${o.icon}</div><h3>${o.name}</h3><div class="goal-desc">${o.desc}</div><div class="goal-amount">${fmt(o.saved)}</div><div class="goal-target">of ${fmt(o.target)} · ${pct.toFixed(1)}% funded</div><div class="progress-track ${o.cls === "travel" ? "gold-track" : o.cls === "india" ? "rose-track" : ""}"><div class="progress-fill ${o.cls === "travel" ? "gold-fill" : o.cls === "india" ? "rose-fill" : ""}" style="width:${pct}%"></div></div><label>Add to goal savings ($)<input type="number" min="0" step=".01" id="goal-add-${o.key}" placeholder="0.00"></label><button class="button" data-add-goal="${o.key}">Record savings</button><small class="muted" style="display:block;margin-top:10px">Target / due: ${esc(o.due)}</small></article>`;
       })
       .join("");
     $$("[data-add-goal]").forEach((b) =>
@@ -757,7 +760,7 @@ return `<article class="goal-card"><div class="goal-icon ${o.cls}">${o.icon}</di
           v = Number(el.value);
         if (!Number.isFinite(v) || v <= 0) {
           toast("Enter an amount greater than zero");
-return;
+          return;
         }
         data.goals[key] = Number(data.goals[key] || 0) + v;
         save();
@@ -774,12 +777,35 @@ return;
       `<div><span>Tuition still to fund</span><strong>${fmt(short)}</strong></div><div><span>Travel budget combined</span><strong>${fmt(totalTravel)}</strong></div><div><span>Current savings above tuition target</span><strong>${fmt(Math.max(0, s.startingCash - s.tuitionTarget))}</strong></div>`;
   }
   function renderCards() {
+    const cardBalance = (c) => Number(c.balance || 0) + data.cardTransactions.filter((t) => t.card === c.name).reduce((n, t) => n + (t.type === "Purchase" || t.type === "Fee" || t.type === "Interest" ? 1 : -1) * Number(t.amount), 0);
     $("#cards-grid").innerHTML = data.cards
       .map(
         (c, i) =>
-          `<div><div class="bank-card ${i === 1 ? "card-two" : ""}"><div class="card-label">${esc(c.name.toUpperCase())} · PURCHASE APR ${Number(c.apr || 0).toFixed(2)}%</div><div class="card-balance">${c.balance === null || c.balance === "" ? "Balance not entered" : fmt(c.balance)}</div><div class="card-bottom"><span>Limit ${fmt(c.limit)}</span><span>Available ${c.balance === null || c.balance === "" ? "—" : fmt(Math.max(0, Number(c.limit) - Number(c.balance)))}</span></div></div><div class="card-edit"><h4>${esc(c.name)} details</h4><div class="card-edit-grid"><label>Credit limit ($)<input type="number" min="0" step=".01" data-card="${i}" data-field="limit" value="${c.limit}"></label><label>Current balance ($)<input type="number" min="0" step=".01" data-card="${i}" data-field="balance" value="${c.balance ?? ""}" placeholder="Unknown"></label><label>Purchase APR (%)<input type="number" min="0" step=".01" data-card="${i}" data-field="apr" value="${c.apr}"></label><label>Minimum payment ($)<input type="number" min="0" step=".01" data-card="${i}" data-field="minPayment" value="${c.minPayment || 0}"></label><label>Payment due date<input type="date" data-card="${i}" data-field="dueDate" value="${c.dueDate || ""}"></label></div></div></div>`,
+          `<div><div class="bank-card ${i === 1 ? "card-two" : ""}"><div class="card-label">${esc(c.name.toUpperCase())} · PURCHASE APR ${Number(c.apr || 0).toFixed(2)}%</div><div class="card-balance">${fmt(cardBalance(c))}</div><div class="card-bottom"><span>Limit ${fmt(c.limit)}</span><span>Available ${fmt(Number(c.limit) - cardBalance(c))}</span></div></div><div class="card-edit"><h4>${esc(c.name)} details</h4><div class="card-edit-grid"><label>Credit limit ($)<input type="number" min="0" step=".01" data-card="${i}" data-field="limit" value="${c.limit}"></label><label>Starting balance ($)<input type="number" min="0" step=".01" data-card="${i}" data-field="balance" value="${c.balance ?? ""}" placeholder="Unknown"></label><label>Purchase APR (%)<input type="number" min="0" step=".01" data-card="${i}" data-field="apr" value="${c.apr}"></label><label>Minimum payment ($)<input type="number" min="0" step=".01" data-card="${i}" data-field="minPayment" value="${c.minPayment || 0}"></label><label>Payment due date<input type="date" data-card="${i}" data-field="dueDate" value="${c.dueDate || ""}"></label></div></div></div>`,
       )
       .join("");
+    const priorSelection = $("#statement-card").value;
+    const cardOptions = data.cards.map(c => `<option>${esc(c.name)}</option>`).join("");
+    $("#statement-card").innerHTML = cardOptions;
+    if (data.cards.some(c => c.name === priorSelection)) $("#statement-card").value = priorSelection;
+    $("#card-transaction-form").elements.card.innerHTML = cardOptions;
+    if (!$("#statement-month").value) $("#statement-month").value = selectedMonth;
+    const cardName = $("#statement-card").value || data.cards[0]?.name;
+    const month = $("#statement-month").value || selectedMonth;
+    const activity = data.cardTransactions.filter(t => t.card === cardName && monthOf(t.date) === month);
+    const total = type => activity.filter(t => t.type === type).reduce((a,t) => a + Number(t.amount), 0);
+    const card = data.cards.find(c => c.name === cardName);
+    const prior = card ? Number(card.balance || 0) + data.cardTransactions.filter(t => t.card === cardName && monthOf(t.date) < month).reduce((n,t) => n + (["Purchase","Fee","Interest"].includes(t.type) ? 1 : -1) * Number(t.amount), 0) : 0;
+    const statementBalance = prior + total("Purchase") + total("Fee") + total("Interest") - total("Refund") - total("Payment");
+    $("#statement-summary").innerHTML = `<div><span>Purchases</span><strong>${fmt(total("Purchase"))}</strong></div><div><span>Payments & refunds</span><strong>${fmt(total("Payment") + total("Refund"))}</strong></div><div><span>Fees & interest</span><strong>${fmt(total("Fee") + total("Interest"))}</strong></div><div><span>Statement balance</span><strong>${fmt(statementBalance)}</strong></div><div><span>Minimum due</span><strong>${fmt(card?.minPayment || 0)}</strong></div><div><span>Payment due date</span><strong>${esc(card?.dueDate || "Not set")}</strong></div>`;
+    $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
+    $("#statement-card").onchange = renderCards;
+    $("#statement-month").onchange = renderCards;
+    const modal = $("#card-transaction-modal"), form = $("#card-transaction-form");
+    const close = () => { modal.classList.remove("open"); modal.setAttribute("aria-hidden", "true"); };
+    $("#add-card-transaction").onclick = () => { form.reset(); form.elements.date.value = todayISO(); form.elements.card.innerHTML = cardOptions; modal.classList.add("open"); modal.setAttribute("aria-hidden", "false"); };
+    $("#close-card-modal").onclick = $("#cancel-card-modal").onclick = close;
+    form.onsubmit = e => { e.preventDefault(); const fd = new FormData(form), type = fd.get("type"), cardName = fd.get("card"), amount = Number(fd.get("amount")); const t = {id:newId(),date:fd.get("date"),type,card:cardName,description:fd.get("description").trim(),category:fd.get("category"),amount,notes:fd.get("notes").trim()}; if (!t.description || amount <= 0) return; data.cardTransactions.push(t); if (type === "Payment") data.transactions.push({id:newId(),date:t.date,type:"Card payment",description:`${cardName} payment`,category:"Credit card",amount,account:"Checking",notes:`Card payment · ${t.description}`,cardTransactionId:t.id}); selectedMonth = monthOf(t.date); save(); close(); render(); toast("Card transaction saved"); };
     $("#save-cards").onclick = () => {
       $$("[data-card]").forEach((el) => {
         const c = data.cards[Number(el.dataset.card)],
@@ -962,7 +988,7 @@ return;
       const prev = d.toISOString().slice(0, 7);
       if (!data.plans[prev]) {
         toast("No previous plan found to copy");
-return;
+        return;
       }
       data.plans[selectedMonth] = JSON.parse(JSON.stringify(data.plans[prev]));
       save();
@@ -988,7 +1014,7 @@ return;
             "Replace current app data with this backup? Export your current data first if you want to keep it.",
           )
         )
-return;
+          return;
         data = {
           ...structuredClone(DEFAULT),
           ...imported,
