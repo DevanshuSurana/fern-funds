@@ -182,6 +182,17 @@
     });
     $("#gate-signup").addEventListener("click", () => signUp("gate"));
     $("#cloud-signout").addEventListener("click", signOut);
+    $("#card-transaction-list").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-delete-card-tx]");
+      if (!button) return;
+      const id = button.dataset.deleteCardTx;
+      if (!data.cardTransactions.some(t => t.id === id)) return;
+      data.cardTransactions = data.cardTransactions.filter(t => t.id !== id);
+      data.transactions = data.transactions.filter(t => t.cardTransactionId !== id);
+      save();
+      render();
+      toast("Card transaction deleted");
+    });
     $("#cloud-sync-now").addEventListener("click", () => syncCloud(true));
     cloudClient.auth.getSession().then(({ data: sessionData, error }) => {
       if (error) {
@@ -268,14 +279,17 @@
     await handleSignedIn(result.user);
   }
   async function signOut() {
-    if (
-      !confirm(
-        "Sign out of cloud sync on this device? Your local copy will remain on this device.",
-      )
-    )
+    if (!cloudClient) {
+      setCloudStatus("Cloud sign-out is unavailable because Supabase is not connected.", "error");
       return;
-    const { error } = await cloudClient.auth.signOut();
-    if (error) setCloudStatus("Sign-out failed: " + error.message, "error");
+    }
+    setCloudStatus("Signing out…", "pending");
+    try {
+      const { error } = await cloudClient.auth.signOut();
+      if (error) setCloudStatus("Sign-out failed: " + error.message, "error");
+    } catch (error) {
+      setCloudStatus("Sign-out failed: " + (error.message || "Check your connection and try again."), "error");
+    }
   }
   async function handleSignedIn(user) {
     if (!user || !cloudClient) return;
@@ -799,18 +813,6 @@
     const statementBalance = prior + total("Purchase") + total("Fee") + total("Interest") - total("Refund") - total("Payment");
     $("#statement-summary").innerHTML = `<div><span>Purchases</span><strong>${fmt(total("Purchase"))}</strong></div><div><span>Payments & refunds</span><strong>${fmt(total("Payment") + total("Refund"))}</strong></div><div><span>Fees & interest</span><strong>${fmt(total("Fee") + total("Interest"))}</strong></div><div><span>Statement balance</span><strong>${fmt(statementBalance)}</strong></div><div><span>Minimum due</span><strong>${fmt(card?.minPayment || 0)}</strong></div><div><span>Payment due date</span><strong>${esc(card?.dueDate || "Not set")}</strong></div>`;
     $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th><th></th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td><td><button class="text-button" data-delete-card-tx="${esc(t.id)}" title="Delete card transaction">Delete</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
-    $$('[data-delete-card-tx]').forEach(button => {
-      button.onclick = () => {
-        const id = button.dataset.deleteCardTx;
-        const transaction = data.cardTransactions.find(t => t.id === id);
-        if (!transaction || !confirm("Delete this card transaction?")) return;
-        data.cardTransactions = data.cardTransactions.filter(t => t.id !== id);
-        data.transactions = data.transactions.filter(t => t.cardTransactionId !== id);
-        save();
-        render();
-        toast("Card transaction deleted");
-      };
-    });
     $("#statement-card").onchange = renderCards;
     $("#statement-month").onchange = renderCards;
     $("#save-cards").onclick = () => {
