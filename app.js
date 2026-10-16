@@ -801,11 +801,6 @@
     $("#card-transaction-list").innerHTML = activity.length ? `<table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th class="align-right">Amount</th></tr></thead><tbody>${activity.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.category)}</td><td>${esc(t.type)}</td><td class="align-right">${fmt(t.amount)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty-state visible"><strong>No card activity for ${esc(monthLabel(month))}</strong><p>Add purchases, payments, refunds, fees, or interest to build this statement.</p></div>`;
     $("#statement-card").onchange = renderCards;
     $("#statement-month").onchange = renderCards;
-    const modal = $("#card-transaction-modal"), form = $("#card-transaction-form");
-    const close = () => { modal.classList.remove("open"); modal.setAttribute("aria-hidden", "true"); };
-    $("#add-card-transaction").onclick = () => { form.reset(); form.elements.date.value = todayISO(); form.elements.card.innerHTML = cardOptions; modal.classList.add("open"); modal.setAttribute("aria-hidden", "false"); };
-    $("#close-card-modal").onclick = $("#cancel-card-modal").onclick = close;
-    form.onsubmit = e => { e.preventDefault(); const fd = new FormData(form), type = fd.get("type"), cardName = fd.get("card"), amount = Number(fd.get("amount")); const t = {id:newId(),date:fd.get("date"),type,card:cardName,description:fd.get("description").trim(),category:fd.get("category"),amount,notes:fd.get("notes").trim()}; if (!t.description || amount <= 0) return; data.cardTransactions.push(t); if (type === "Payment") data.transactions.push({id:newId(),date:t.date,type:"Card payment",description:`${cardName} payment`,category:"Credit card",amount,account:"Checking",notes:`Card payment · ${t.description}`,cardTransactionId:t.id}); selectedMonth = monthOf(t.date); save(); close(); render(); toast("Card transaction saved"); };
     $("#save-cards").onclick = () => {
       $$("[data-card]").forEach((el) => {
         const c = data.cards[Number(el.dataset.card)],
@@ -932,6 +927,27 @@
     };
     $("#add-transaction").onclick = showModal;
     $("#empty-add").onclick = showModal;
+    const cardModal = $("#card-transaction-modal"), cardForm = $("#card-transaction-form");
+    const closeCardModal = () => { cardModal.classList.remove("open"); cardModal.setAttribute("aria-hidden", "true"); };
+    $("#add-card-transaction").onclick = () => {
+      cardForm.reset();
+      cardForm.elements.date.value = todayISO();
+      cardForm.elements.card.innerHTML = data.cards.map(c => `<option>${esc(c.name)}</option>`).join("");
+      cardModal.classList.add("open");
+      cardModal.setAttribute("aria-hidden", "false");
+    };
+    $("#close-card-modal").onclick = $("#cancel-card-modal").onclick = closeCardModal;
+    cardModal.addEventListener("click", e => { if (e.target === cardModal) closeCardModal(); });
+    cardForm.onsubmit = e => {
+      e.preventDefault();
+      const fd = new FormData(cardForm), type = fd.get("type"), cardName = fd.get("card"), amount = Number(fd.get("amount"));
+      const t = { id: newId(), date: fd.get("date"), type, card: cardName, description: fd.get("description").trim(), category: fd.get("category"), amount, notes: fd.get("notes").trim() };
+      if (!t.description || amount <= 0 || !t.card) return;
+      data.cardTransactions.push(t);
+      if (type === "Payment") data.transactions.push({ id: newId(), date: t.date, type: "Card payment", description: `${cardName} payment`, category: "Credit card", amount, account: "Checking", notes: `Card payment · ${t.description}`, cardTransactionId: t.id });
+      selectedMonth = monthOf(t.date);
+      save(); closeCardModal(); render(); toast("Card transaction saved");
+    };
     $("#close-modal").onclick = hideModal;
     $("#cancel-modal").onclick = hideModal;
     $("#transaction-modal").addEventListener("click", (e) => {
@@ -1019,6 +1035,11 @@
           ...structuredClone(DEFAULT),
           ...imported,
           settings: { ...DEFAULT.settings, ...imported.settings },
+          cards: imported.cards || structuredClone(DEFAULT.cards),
+          goals: imported.goals || {},
+          plans: imported.plans || {},
+          transactions: imported.transactions || [],
+          cardTransactions: imported.cardTransactions || [],
         };
         save();
         render();
