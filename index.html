@@ -86,6 +86,13 @@
 
       <section id="view-transactions" class="view">
         <div class="section-intro"><div><div class="eyebrow">THE DETAILS MATTER</div><h2>Transactions</h2><p class="muted">Keep a simple record of where your money comes from and where it goes.</p></div><button class="button" id="add-transaction">＋ Add transaction</button></div>
+        <article class="panel statement-import-panel">
+          <div class="panel-head"><div><div class="eyebrow">MONTHLY STATEMENT</div><h3>Review statement activity</h3></div><span class="privacy-chip">Private · processed in this browser</span></div>
+          <p class="muted">Choose a Chase CSV export, review each transaction, swipe right to include it or left to skip it, then confirm the import. Your statement file is not uploaded.</p>
+          <div class="statement-import-controls"><label>Statement file (CSV)<input id="statement-file" type="file" accept=".csv,text/csv"></label><label>Account<select id="statement-account"><option value="Checking">Checking</option><option value="Savings">Savings</option><option value="Cash">Cash</option></select></label><button class="button" id="start-statement-review" type="button" disabled>Start review</button></div>
+          <div id="statement-import-status" class="muted small" aria-live="polite"></div>
+          <div id="statement-review" class="statement-review hidden" aria-live="polite"></div>
+        </article>
         <article class="panel">
           <div class="filters"><div class="search-box"><span>⌕</span><input id="transaction-search" placeholder="Search descriptions or categories"></div><select id="transaction-month-filter"><option value="all">All months</option></select><select id="transaction-type-filter"><option value="all">All types</option><option>Income</option><option>Expense</option><option>Card payment</option><option>Transfer</option></select></div>
           <div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th>Account</th><th class="align-right">Amount</th><th></th></tr></thead><tbody id="transaction-rows"></tbody></table></div>
@@ -159,6 +166,6 @@
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=compass-income-20261016"></script>
+  <script src="app.js?v=statement-review-20261019"></script>
 </body>
 </html>

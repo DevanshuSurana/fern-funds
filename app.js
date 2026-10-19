@@ -482,6 +482,59 @@
   function txsForMonth(m) {
     return data.transactions.filter((t) => monthOf(t.date) === m);
   }
+  function parseStatementCSV(text) {
+    const rows = [];
+    let row = [], field = "", quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (quoted && ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') quoted = !quoted;
+      else if (ch === "," && !quoted) { row.push(field); field = ""; }
+      else if ((ch === "\n" || ch === "\r") && !quoted) {
+        if (ch === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); if (row.some(cell => cell.trim())) rows.push(row);
+        row = []; field = "";
+      } else field += ch;
+    }
+    row.push(field); if (row.some(cell => cell.trim())) rows.push(row);
+    if (rows.length < 2) throw new Error("The CSV has no transaction rows.");
+    const headers = rows[0].map(v => v.trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const find = (...names) => headers.findIndex(h => names.includes(h));
+    const dateCol = find("transactiondate", "date", "postingdate", "postdate");
+    const descCol = find("description", "merchant", "details", "memo", "payee");
+    const categoryCol = find("category", "transactioncategory");
+    const amountCol = find("amount", "transactionamount");
+    const debitCol = find("debit", "withdrawal", "debitamount");
+    const creditCol = find("credit", "deposit", "creditamount");
+    if (dateCol < 0 || descCol < 0 || (amountCol < 0 && debitCol < 0 && creditCol < 0))
+      throw new Error("Couldn't identify date, description, and amount columns. Use a CSV with Date, Description, and Amount (or Debit/Credit) headers.");
+    const val = (r, c) => c < 0 ? "" : String(r[c] || "").trim();
+    const money = value => {
+      const negative = /^\s*\(.*\)\s*$/.test(value) || /^\s*-/.test(value);
+      const n = Number(value.replace(/[,$()\s]/g, ""));
+      return Number.isFinite(n) ? Math.abs(n) * (negative ? -1 : 1) : NaN;
+    };
+    return rows.slice(1).map((r, index) => {
+      const rawDate = val(r, dateCol);
+      let date = "";
+      if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) date = rawDate.slice(0, 10);
+      else { const m = rawDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/); if (m) date = `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`; }
+      let amount, signed = true;
+      if (amountCol >= 0 && val(r, amountCol)) amount = money(val(r, amountCol));
+      else if (debitCol >= 0 || creditCol >= 0) {
+        const debit = val(r, debitCol), credit = val(r, creditCol);
+        amount = debit ? -Math.abs(money(debit)) : Math.abs(money(credit)); signed = true;
+      }
+      const rawCategory = val(r, categoryCol);
+      const category = CATEGORIES.find(c => c.toLowerCase() === rawCategory.toLowerCase()) || rawCategory || "Other";
+      return { id: newId(), date, description: val(r, descCol), amount, category, type: amount >= 0 ? "Income" : "Expense", include: true, originalIndex: index };
+    }).filter(t => t.date && t.description && Number.isFinite(t.amount) && t.amount !== 0);
+  }
+  function statementDuplicate(t, account) {
+    const normalize = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 34);
+    if (account.startsWith("Credit card")) return data.cardTransactions.some(x => x.card === account && x.date === t.date && Number(x.amount) === Math.abs(t.amount) && normalize(x.description) === normalize(t.description)) || (t.type === "Payment" && data.transactions.some(x => x.type === "Card payment" && x.date === t.date && Number(x.amount) === Math.abs(t.amount)));
+    return data.transactions.some(x => x.account === account && x.date === t.date && Number(x.amount) === Math.abs(t.amount) && normalize(x.description) === normalize(t.description)) || (t.type === "Card payment" && data.cardTransactions.some(x => x.type === "Payment" && x.date === t.date && Number(x.amount) === Math.abs(t.amount)));
+  }
   function compassIncomeForMonth(m) {
     return txsForMonth(m)
       .filter((t) => t.type === "Income" && /compass\s*group/i.test(t.description || ""))
@@ -935,6 +988,99 @@
     };
     $("#add-transaction").onclick = showModal;
     $("#empty-add").onclick = showModal;
+    const statementFile = $("#statement-file"), statementAccount = $("#statement-account"), reviewBox = $("#statement-review");
+    let statementRows = [], statementIndex = 0, statementDecisions = [], statementStep = "review";
+    const status = message => { $("#statement-import-status").textContent = message; };
+    const setStatementStep = step => { statementStep = step; renderStatementReview(); };
+    const updateStatementRow = () => {
+      const row = statementRows[statementIndex];
+      if (!row) return;
+      row.date = reviewBox.querySelector("[data-statement-date]")?.value || row.date;
+      row.description = reviewBox.querySelector("[data-statement-description]")?.value.trim() || row.description;
+      row.type = reviewBox.querySelector("[data-statement-type]")?.value || row.type;
+      const amt = Number(reviewBox.querySelector("[data-statement-amount]")?.value);
+      if (Number.isFinite(amt) && amt > 0) row.amount = row.type === "Income" || row.type === "Refund" ? amt : -amt;
+      row.category = reviewBox.querySelector("[data-statement-category]")?.value || row.category;
+      row.paymentCard = reviewBox.querySelector("[data-statement-payment-card]")?.value || row.paymentCard || data.cards[0]?.name;
+    };
+    function renderStatementReview() {
+      if (!statementRows.length) { reviewBox.classList.add("hidden"); reviewBox.innerHTML = ""; return; }
+      reviewBox.classList.remove("hidden");
+      const account = statementAccount.value, isCard = account.startsWith("Credit card");
+      if (statementStep === "confirm") {
+        const included = statementDecisions.filter(d => d.action === "include").map(d => d.row);
+        reviewBox.innerHTML = `<div class="statement-review-head"><div><div class="eyebrow">FINAL CHECK</div><h3>Confirm statement import</h3><p class="muted">${included.length} transaction${included.length === 1 ? "" : "s"} will be added to ${esc(account)}. Skipped rows will not be saved.</p></div><span class="statement-count">${included.length} to add</span></div><div class="table-wrap statement-preview"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Category</th><th class="align-right">Amount</th></tr></thead><tbody>${included.map(t=>`<tr><td>${esc(t.date)}</td><td>${esc(t.description)}</td><td>${esc(t.type)}</td><td>${esc(t.category)}</td><td class="align-right">${fmt(Math.abs(t.amount))}</td></tr>`).join("")}</tbody></table></div><div class="statement-actions"><button class="button secondary" data-statement-back>Back to review</button><button class="button" data-statement-confirm>Confirm and import ${included.length}</button></div>`;
+        reviewBox.querySelector("[data-statement-back]").onclick = () => setStatementStep("review");
+        reviewBox.querySelector("[data-statement-confirm]").onclick = importStatementRows;
+        return;
+      }
+      if (statementStep === "done") {
+        reviewBox.innerHTML = `<div class="statement-done"><div class="eyebrow">IMPORT COMPLETE</div><h3>Statement reviewed</h3><p class="muted">${statementDecisions.filter(d=>d.action === "include").length} transactions added; ${statementDecisions.filter(d=>d.action === "skip").length} skipped.</p><button class="button secondary" data-statement-reset>Review another statement</button></div>`;
+        reviewBox.querySelector("[data-statement-reset]").onclick = resetStatementReview;
+        return;
+      }
+      if (statementIndex >= statementRows.length) { setStatementStep("confirm"); return; }
+      const row = statementRows[statementIndex];
+      const typeOptions = isCard ? ["Purchase", "Refund", "Payment", "Fee", "Interest"] : ["Expense", "Income", "Card payment", "Transfer"];
+      const defaultType = isCard ? (/payment|autopay|online pmt/i.test(row.description) ? "Payment" : row.amount > 0 ? "Refund" : "Purchase") : (/card payment|autopay|payment thank/i.test(row.description) ? "Card payment" : row.amount > 0 ? "Income" : "Expense");
+      if (!row.type || !typeOptions.includes(row.type)) row.type = defaultType;
+      const duplicate = statementDuplicate(row, account);
+      reviewBox.innerHTML = `<div class="statement-review-head"><div><div class="eyebrow">TRANSACTION ${statementIndex + 1} OF ${statementRows.length}</div><h3>Keep it or skip it?</h3></div><span class="statement-count">${statementDecisions.filter(d=>d.action === "include").length} kept · ${statementDecisions.filter(d=>d.action === "skip").length} skipped</span></div>${duplicate ? `<div class="duplicate-warning"><strong>Possible duplicate</strong><span>A matching transaction already exists for this account, date, amount, and description.</span></div>` : ""}<div class="swipe-transaction"><label>Date<input data-statement-date type="date" value="${esc(row.date)}"></label><label>Merchant / description<input data-statement-description maxlength="120" value="${esc(row.description)}"></label><label>Type<select data-statement-type>${typeOptions.map(t=>`<option ${row.type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label><label>Category<select data-statement-category>${[...new Set([...CATEGORIES,"Dining","Travel","Fee","Interest","Other",row.category])].map(c=>`<option ${row.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>Amount ($)<input data-statement-amount type="number" min=".01" step=".01" value="${Math.abs(row.amount).toFixed(2)}"></label>${!isCard ? `<label data-payment-card-wrap>Card receiving payment<select data-statement-payment-card>${data.cards.map(c=>`<option value="${esc(c.name)}" ${row.paymentCard === c.name ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}<div class="statement-swipe-buttons"><button class="button secondary" data-statement-swipe="skip" aria-label="Skip this transaction">← Skip</button><button class="button" data-statement-swipe="include">Keep →</button></div></div><div class="statement-actions"><button class="text-button" data-statement-undo ${statementDecisions.length ? "" : "disabled"}>Undo last swipe</button></div>`;
+      reviewBox.querySelectorAll("[data-statement-swipe]").forEach(button => button.onclick = () => {
+        updateStatementRow();
+        const rowNow = statementRows[statementIndex];
+        if (!rowNow.date || !rowNow.description || !Number.isFinite(rowNow.amount) || rowNow.amount === 0) { status("Please enter a valid date, description, and non-zero amount before swiping."); return; }
+        statementDecisions.push({ index: statementIndex, action: button.dataset.statementSwipe, row: { ...rowNow } });
+        statementIndex++; status(""); renderStatementReview();
+      });
+      reviewBox.querySelector("[data-statement-undo]").onclick = () => {
+        const prev = statementDecisions.pop(); if (!prev) return;
+        statementIndex = prev.index; statementRows[statementIndex] = prev.row; renderStatementReview();
+      };
+    }
+    function importStatementRows() {
+      const account = statementAccount.value;
+      for (const decision of statementDecisions) {
+        if (decision.action !== "include") continue;
+        const t = decision.row, amount = Math.abs(Number(t.amount));
+        if (account.startsWith("Credit card")) {
+          const cardTx = { id: newId(), date: t.date, type: t.type, card: account, description: t.description, category: t.category, amount, notes: "Imported from statement" };
+          data.cardTransactions.push(cardTx);
+          if (t.type === "Payment") {
+            const checkingPayment = data.transactions.find(x => x.type === "Card payment" && x.date === t.date && Number(x.amount) === amount && !x.cardTransactionId);
+            if (checkingPayment) checkingPayment.cardTransactionId = cardTx.id;
+          }
+        } else {
+          const type = t.type;
+          const tx = { id: newId(), date: t.date, type, description: t.description, category: type === "Card payment" ? "Credit card" : t.category, amount, account, notes: "Imported from statement" };
+          if (type === "Card payment") {
+            const card = data.cards.find(c => c.name === t.paymentCard) || data.cards[0];
+            let cardTx = data.cardTransactions.find(x => x.card === card.name && x.type === "Payment" && x.date === t.date && Number(x.amount) === amount && !data.transactions.some(linked => linked.cardTransactionId === x.id));
+            if (!cardTx) { cardTx = { id: newId(), date: t.date, type: "Payment", card: card.name, description: t.description, category: "Credit card", amount, notes: "Matched from checking statement" }; data.cardTransactions.push(cardTx); }
+            tx.cardTransactionId = cardTx.id;
+          }
+          data.transactions.push(tx);
+        }
+      }
+      const added = statementDecisions.filter(d => d.action === "include").length;
+      selectedMonth = statementRows[0]?.date ? monthOf(statementRows[0].date) : selectedMonth;
+      save(); render(); setStatementStep("done"); status(`${added} transaction${added === 1 ? "" : "s"} imported to ${account}.`);
+    }
+    function resetStatementReview() { statementRows = []; statementDecisions = []; statementIndex = 0; statementAccount.disabled = false; statementFile.value = ""; $("#start-statement-review").disabled = true; reviewBox.classList.add("hidden"); reviewBox.innerHTML = ""; status(""); }
+    statementFile.onchange = () => { $("#start-statement-review").disabled = !statementFile.files?.length; status(statementFile.files?.length ? "Statement selected. Choose the account, then start reviewing." : ""); };
+    statementAccount.onchange = () => {
+      [...data.cards.map(c=>c.name)].forEach(name => { if (![...statementAccount.options].some(o=>o.value === name)) statementAccount.add(new Option(name, name)); });
+    };
+    statementAccount.onchange();
+    $("#start-statement-review").onclick = async () => {
+      const file = statementFile.files?.[0]; if (!file) return;
+      try {
+        const parsed = parseStatementCSV(await file.text());
+        if (!parsed.length) throw new Error("No valid transactions were found. Check that the CSV includes dates and amounts.");
+        statementRows = parsed; statementDecisions = []; statementIndex = 0; statementAccount.disabled = true; setStatementStep("review");
+        status(`${parsed.length} rows found. Nothing is saved until you confirm the final import.`);
+      } catch (error) { status(error.message || "Could not read this CSV."); }
+    };
     const cardModal = $("#card-transaction-modal"), cardForm = $("#card-transaction-form");
     const cardReview = $("#card-tx-review"), cardReviewButton = $("#review-card-tx");
     let editingCardTransactionId = null, pendingCardTransaction = null;
