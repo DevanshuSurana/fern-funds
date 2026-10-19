@@ -530,6 +530,87 @@
       return { id: newId(), date, description: val(r, descCol), amount, category, type: amount >= 0 ? "Income" : "Expense", include: true, originalIndex: index };
     }).filter(t => t.date && t.description && Number.isFinite(t.amount) && t.amount !== 0);
   }
+  async function parseStatementPDF(file, account) {
+    if (file.size > 50 * 1024 * 1024) throw new Error("This PDF is over 50 MB. Save a smaller statement file and try again.");
+    let pdfjs;
+    try { pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/build/pdf.min.mjs"); }
+    catch { throw new Error("The PDF reader could not load. Check your internet connection and try again; your statement itself is still processed locally."); }
+    pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/build/pdf.worker.min.mjs";
+    let pdf;
+    try { pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; }
+    catch (error) { throw new Error(/password/i.test(error?.message || "") ? "This PDF is password-protected. Save an unlocked copy and try again." : "Could not read this PDF. It may be damaged or use an unsupported format."); }
+    if (pdf.numPages > 80) throw new Error("This PDF has more than 80 pages. Use a single monthly statement PDF.");
+    const lines = [];
+    let allText = "";
+    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+      const page = await pdf.getPage(pageNo);
+      const content = await page.getTextContent();
+      const items = content.items.filter(item => typeof item.str === "string" && item.str.trim()).map(item => ({ text: item.str, x: item.transform?.[4] || 0, y: item.transform?.[5] || 0 }));
+      items.sort((a,b) => b.y - a.y || a.x - b.x);
+      const pageLines = [];
+      for (const item of items) {
+        let line = pageLines.find(entry => Math.abs(entry.y - item.y) < 2.5);
+        if (!line) { line = { y: item.y, pieces: [] }; pageLines.push(line); }
+        line.pieces.push(item);
+      }
+      for (const line of pageLines) {
+        const text = line.pieces.sort((a,b)=>a.x-b.x).map(piece=>piece.text).join(" ").replace(/\s+/g," ").trim();
+        if (text) { lines.push(text); allText += `${text}\n`; }
+      }
+      page.cleanup();
+    }
+    await pdf.destroy();
+    if (!allText.trim()) throw new Error("This PDF has no selectable text. It looks scanned; use a text-based PDF or Chase activity CSV. The app does not send statements to an OCR service.");
+    const years = [...allText.matchAll(/\b20\d{2}\b/g)].map(match=>Number(match[0]));
+    const baseYear = years.length ? Math.max(...years) : new Date().getFullYear();
+    const explicitStatementDate = allText.match(/\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])[\/\-](20\d{2})\b/);
+    const referenceMonth = explicitStatementDate ? Number(explicitStatementDate[1]) : new Date().getMonth() + 1;
+    const referenceYear = explicitStatementDate ? Number(explicitStatementDate[3]) : baseYear;
+    const datePattern = /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])(?:[\/\-](\d{2,4}))?\b/g;
+    const moneyPattern = /\(?\s*(?:\$\s*)?-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\)?-?/g;
+    const excluded = /^(?:new balance|previous balance|statement balance|minimum payment due|payment due date|credit limit|available credit|opening balance|closing balance|balance as of|total fees|total interest|account summary|rewards summary|interest charge calculation|annual percentage rate|important information|page \d+)/i;
+    const parsed = [];
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      const dates = [...line.matchAll(datePattern)];
+      const amounts = [...line.matchAll(moneyPattern)];
+      if (!dates.length || !amounts.length) continue;
+      const cleanLine = line.replace(datePattern, " ").replace(moneyPattern, " ").replace(/\s+/g," ").trim();
+      if (excluded.test(cleanLine) || cleanLine.length < 2) continue;
+      const dateMatch = dates[0];
+      const month = Number(dateMatch[1]), day = Number(dateMatch[2]);
+      let year = dateMatch[3] ? Number(dateMatch[3]) : referenceYear;
+      if (dateMatch[3]?.length === 2) year += 2000;
+      else if (dateMatch[3] && dateMatch[3].length === 4) year = Number(dateMatch[3]);
+      else if (month > referenceMonth) year--;
+      const date = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      const amountText = amounts[amounts.length - 1][0].trim();
+      const negative = /^\s*\(?-/.test(amountText) || /-\s*$/.test(amountText) || /^\s*\(.*\)\s*$/.test(amountText);
+      const amount = Number(amountText.replace(/[,$()\s-]/g,""));
+      if (!Number.isFinite(amount) || !amount) continue;
+      let description = cleanLine.replace(/^(?:transaction date|post date|date)\s*/i, "").replace(/^(?:purchase|payment|credit|debit)\s*/i, "").trim();
+      if (description.length < 2) continue;
+      const hint = /payment|autopay|online pmt|thank you|payment received|refund|return|credit adjustment/i.test(description);
+      const isCard = account.startsWith("Credit card");
+      const signed = negative ? -amount : hint ? amount : isCard ? -amount : -amount;
+      const cardType = /refund|return|credit adjustment/i.test(description) ? "Refund" : /payment|autopay|online pmt|thank you|payment received/i.test(description) ? "Payment" : /interest charge/i.test(description) ? "Interest" : /annual fee|late fee|service fee/i.test(description) ? "Fee" : "Purchase";
+      const checkingType = /credit card|credit crd|card payment|payment thank/i.test(description) ? "Card payment" : /payroll|paycheck|direct deposit|deposit|refund|return|reimbursement/i.test(description) ? "Income" : "Expense";
+      parsed.push({ id: newId(), date, description, amount: signed, category: inferStatementCategory(description), type: isCard ? cardType : checkingType, pdfNeedsReview: amounts.length > 1 || dates.length > 1, include: true, originalIndex: index });
+    }
+    if (!parsed.length) throw new Error("No transaction rows could be identified in this PDF. If it is a scanned statement or the layout differs, use Chase's CSV activity export or share a sample statement so the parser can be adjusted.");
+    return parsed;
+  }
+  function inferStatementCategory(description) {
+    const s = String(description || "").toLowerCase();
+    if (/grocery|market|supermarket|whole foods|trader joe/.test(s)) return "Groceries";
+    if (/restaurant|cafe|coffee|dining|doordash|uber eats|restaurant/.test(s)) return "Dining";
+    if (/gas|fuel|uber|lyft|transit|parking/.test(s)) return "Transportation";
+    if (/electric|utility|water bill|internet|wireless|phone bill/.test(s)) return "Utilities";
+    if (/interest charge/.test(s)) return "Interest";
+    if (/annual fee|late fee|service fee/.test(s)) return "Fee";
+    if (/payroll|paycheck|compass group|direct deposit/.test(s)) return "Paycheck";
+    return "Other";
+  }
   function statementDuplicate(t, account) {
     const normalize = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 34);
     if (account.startsWith("Credit card")) return data.cardTransactions.some(x => x.card === account && x.date === t.date && Number(x.amount) === Math.abs(t.amount) && normalize(x.description) === normalize(t.description)) || (t.type === "Payment" && data.transactions.some(x => x.type === "Card payment" && x.date === t.date && Number(x.amount) === Math.abs(t.amount)));
@@ -1025,7 +1106,7 @@
       const defaultType = isCard ? (/payment|autopay|online pmt/i.test(row.description) ? "Payment" : row.amount > 0 ? "Refund" : "Purchase") : (/card payment|autopay|payment thank/i.test(row.description) ? "Card payment" : row.amount > 0 ? "Income" : "Expense");
       if (!row.type || !typeOptions.includes(row.type)) row.type = defaultType;
       const duplicate = statementDuplicate(row, account);
-      reviewBox.innerHTML = `<div class="statement-review-head"><div><div class="eyebrow">TRANSACTION ${statementIndex + 1} OF ${statementRows.length}</div><h3>Keep it or skip it?</h3></div><span class="statement-count">${statementDecisions.filter(d=>d.action === "include").length} kept · ${statementDecisions.filter(d=>d.action === "skip").length} skipped</span></div>${duplicate ? `<div class="duplicate-warning"><strong>Possible duplicate</strong><span>A matching transaction already exists for this account, date, amount, and description.</span></div>` : ""}<div class="swipe-transaction"><label>Date<input data-statement-date type="date" value="${esc(row.date)}"></label><label>Merchant / description<input data-statement-description maxlength="120" value="${esc(row.description)}"></label><label>Type<select data-statement-type>${typeOptions.map(t=>`<option ${row.type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label><label>Category<select data-statement-category>${[...new Set([...CATEGORIES,"Dining","Travel","Fee","Interest","Other",row.category])].map(c=>`<option ${row.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>Amount ($)<input data-statement-amount type="number" min=".01" step=".01" value="${Math.abs(row.amount).toFixed(2)}"></label>${!isCard ? `<label data-payment-card-wrap>Card receiving payment<select data-statement-payment-card>${data.cards.map(c=>`<option value="${esc(c.name)}" ${row.paymentCard === c.name ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}<div class="statement-swipe-buttons"><button class="button secondary" data-statement-swipe="skip" aria-label="Skip this transaction">← Skip</button><button class="button" data-statement-swipe="include">Keep →</button></div></div><div class="statement-actions"><button class="text-button" data-statement-undo ${statementDecisions.length ? "" : "disabled"}>Undo last swipe</button></div>`;
+      reviewBox.innerHTML = `<div class="statement-review-head"><div><div class="eyebrow">TRANSACTION ${statementIndex + 1} OF ${statementRows.length}</div><h3>Keep it or skip it?</h3></div><span class="statement-count">${statementDecisions.filter(d=>d.action === "include").length} kept · ${statementDecisions.filter(d=>d.action === "skip").length} skipped</span></div>${duplicate ? `<div class="duplicate-warning"><strong>Possible duplicate</strong><span>A matching transaction already exists for this account, date, amount, and description.</span></div>` : ""}${row.pdfNeedsReview ? `<div class="duplicate-warning"><strong>Double-check the PDF values</strong><span>The statement line contained more than one date or amount, so confirm the extracted date and amount before keeping it.</span></div>` : ""}<div class="swipe-transaction"><label>Date<input data-statement-date type="date" value="${esc(row.date)}"></label><label>Merchant / description<input data-statement-description maxlength="120" value="${esc(row.description)}"></label><label>Type<select data-statement-type>${typeOptions.map(t=>`<option ${row.type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label><label>Category<select data-statement-category>${[...new Set([...CATEGORIES,"Dining","Travel","Fee","Interest","Other",row.category])].map(c=>`<option ${row.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label><label>Amount ($)<input data-statement-amount type="number" min=".01" step=".01" value="${Math.abs(row.amount).toFixed(2)}"></label>${!isCard ? `<label data-payment-card-wrap>Card receiving payment<select data-statement-payment-card>${data.cards.map(c=>`<option value="${esc(c.name)}" ${row.paymentCard === c.name ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>` : ""}<div class="statement-swipe-buttons"><button class="button secondary" data-statement-swipe="skip" aria-label="Skip this transaction">← Skip</button><button class="button" data-statement-swipe="include">Keep →</button></div></div><div class="statement-actions"><button class="text-button" data-statement-undo ${statementDecisions.length ? "" : "disabled"}>Undo last swipe</button></div>`;
       reviewBox.querySelectorAll("[data-statement-swipe]").forEach(button => button.onclick = () => {
         updateStatementRow();
         const rowNow = statementRows[statementIndex];
@@ -1075,10 +1156,11 @@
     $("#start-statement-review").onclick = async () => {
       const file = statementFile.files?.[0]; if (!file) return;
       try {
-        const parsed = parseStatementCSV(await file.text());
+        const isPDF = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+        const parsed = isPDF ? await parseStatementPDF(file, statementAccount.value) : parseStatementCSV(await file.text());
         if (!parsed.length) throw new Error("No valid transactions were found. Check that the CSV includes dates and amounts.");
         statementRows = parsed; statementDecisions = []; statementIndex = 0; statementAccount.disabled = true; setStatementStep("review");
-        status(`${parsed.length} rows found. Nothing is saved until you confirm the final import.`);
+        status(`${parsed.length} possible transaction rows found. Nothing is saved until you confirm the final import.`);
       } catch (error) { status(error.message || "Could not read this CSV."); }
     };
     const cardModal = $("#card-transaction-modal"), cardForm = $("#card-transaction-form");
