@@ -78,9 +78,14 @@
           <article class="stat-card"><div class="stat-top"><span>Planned spending</span><span class="stat-icon">↑</span></div><div class="stat-value" id="planned-expenses">$0</div></article>
           <article class="stat-card"><div class="stat-top"><span>Planned leftover</span><span class="stat-icon">✳</span></div><div class="stat-value" id="planned-leftover">$0</div></article>
         </div>
+        <div class="planner-chart-grid">
+          <article class="panel planner-chart-panel"><div class="panel-head"><div><div class="eyebrow">WHERE IT WENT</div><h3>Spending by category</h3></div><span class="chart-subtitle" id="category-chart-total"></span></div><div id="monthly-category-chart" class="planner-chart"></div></article>
+          <article class="panel planner-chart-panel"><div class="panel-head"><div><div class="eyebrow">INCOME VS SPENDING</div><h3>Month at a glance</h3></div></div><div id="monthly-week-chart" class="planner-chart"></div><div class="chart-legend"><span><i class="legend-income"></i>Income</span><span><i class="legend-spend"></i>Spending</span></div></article>
+        </div>
+        <article class="panel planner-insight-panel"><div class="eyebrow">MONTHLY READOUT</div><h3>What your transactions show</h3><div id="monthly-spending-insights" class="planner-insights"></div><p class="panel-footnote">Spending includes checking expenses and card purchases, fees, and interest, minus refunds. Card payments are excluded so purchases are not counted twice.</p></article>
         <article class="panel"><div class="panel-head"><div><div class="eyebrow">MONTHLY PLAN</div><h3>Budget categories</h3></div><button class="button secondary" id="copy-last-month">Copy previous month</button></div>
           <div class="table-wrap"><table><thead><tr><th>Category</th><th>Planned</th><th>Actual</th><th>Difference</th></tr></thead><tbody id="budget-rows"></tbody></table></div>
-          <div class="panel-footnote">Edit planned amounts directly. Actual amounts are calculated from your transaction log.</div>
+          <div class="panel-footnote">Edit planned amounts directly. Actual spending includes card activity and checking expenses.</div>
         </article>
       </section>
 
@@ -166,6 +171,6 @@
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=pdf-statement-review-20261019"></script>
+  <script src="app.js?v=monthly-charts-20261021"></script>
 </body>
 </html>

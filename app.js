@@ -748,6 +748,69 @@
       $(id + "-copy").textContent = `${fmt(saved)} of ${fmt(target)}`;
     }
   }
+  function monthlySpendingRows(month) {
+    const rows = txsForMonth(month).filter(t => t.type === "Expense").map(t => ({
+      date: t.date, description: t.description || "Expense", category: t.category || "Other", amount: Math.abs(Number(t.amount) || 0),
+    }));
+    const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    for (const cardTx of data.cardTransactions.filter(t => monthOf(t.date) === month)) {
+      const amount = Math.abs(Number(cardTx.amount) || 0);
+      if (["Purchase", "Fee", "Interest"].includes(cardTx.type)) {
+        const legacyDuplicate = rows.some(row => row.date === cardTx.date && row.amount === amount && normalize(row.description) === normalize(cardTx.description));
+        if (!legacyDuplicate) rows.push({ date: cardTx.date, description: cardTx.description || "Card purchase", category: cardTx.category || "Other", amount });
+      } else if (cardTx.type === "Refund") {
+        rows.push({ date: cardTx.date, description: cardTx.description || "Card refund", category: cardTx.category || "Other", amount: -amount });
+      }
+    }
+    return rows;
+  }
+  function compactMoney(value) {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(Number(value) || 0);
+  }
+  function renderMonthlyCharts(month, spendingRows, incomeRows) {
+    const categoryTotals = new Map();
+    for (const row of spendingRows) categoryTotals.set(row.category, (categoryTotals.get(row.category) || 0) + row.amount);
+    const categories = [...categoryTotals.entries()].filter(([, amount]) => amount > 0).sort((a,b)=>b[1]-a[1]);
+    const totalSpending = Math.max(0, spendingRows.reduce((sum,row)=>sum + row.amount,0));
+    $("#category-chart-total").textContent = `${fmt(totalSpending)} total`;
+    if (!categories.length) {
+      $("#monthly-category-chart").innerHTML = `<div class="chart-empty">No spending recorded for ${esc(monthLabel(month))} yet.</div>`;
+    } else {
+      const shown = categories.slice(0, 6);
+      if (categories.length > 6) shown.push(["Other categories", categories.slice(6).reduce((sum,row)=>sum+row[1],0)]);
+      const width = 640, height = shown.length * 42 + 12, barX = 175, barWidth = 355, max = Math.max(...shown.map(([,value])=>value),1);
+      const bars = shown.map(([name,value],i)=>{
+        const y = 8 + i * 42, label = name.length > 21 ? `${name.slice(0,20)}…` : name;
+        const fill = Math.max(2,barWidth * value / max);
+        return `<g><title>${esc(name)}: ${fmt(value)}</title><text x="0" y="${y+18}" class="chart-label">${esc(label)}</text><rect x="${barX}" y="${y}" width="${barWidth}" height="23" rx="7" class="chart-track"/><rect x="${barX}" y="${y}" width="${fill}" height="23" rx="7" class="chart-category-bar"/><text x="${barX+barWidth+10}" y="${y+17}" class="chart-value">${esc(compactMoney(value))}</text></g>`;
+      }).join("");
+      $("#monthly-category-chart").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Spending by category for ${esc(monthLabel(month))}">${bars}</svg>`;
+    }
+    const weeks = Array.from({length:5},(_,i)=>({ label:`Week ${i+1}`, income:0, spending:0 }));
+    for (const t of incomeRows) { const day = Number(t.date.slice(8,10)); if (day) weeks[Math.min(4,Math.floor((day-1)/7))].income += Number(t.amount)||0; }
+    for (const t of spendingRows) { const day = Number(t.date.slice(8,10)); if (day) weeks[Math.min(4,Math.floor((day-1)/7))].spending += t.amount; }
+    const maxWeek = Math.max(1,...weeks.flatMap(w=>[w.income,w.spending]));
+    const plotTop = 20, baseline = 188, plotHeight = baseline - plotTop;
+    const grid = [0,0.5,1].map(part=>{const y=baseline-part*plotHeight;return `<line x1="54" y1="${y}" x2="625" y2="${y}" class="chart-gridline"/><text x="48" y="${y+4}" text-anchor="end" class="chart-axis-label">${esc(compactMoney(maxWeek*part))}</text>`;}).join("");
+    const weekBars = weeks.map((w,i)=>{
+      const center = 105+i*108, incomeHeight = Math.max(0,plotHeight*w.income/maxWeek), spendHeight = Math.max(0,plotHeight*Math.max(0,w.spending)/maxWeek);
+      return `<g><title>${w.label}: income ${fmt(w.income)}, spending ${fmt(Math.max(0,w.spending))}</title><rect x="${center-25}" y="${baseline-incomeHeight}" width="25" height="${incomeHeight}" rx="5" class="chart-income-bar"/><rect x="${center+5}" y="${baseline-spendHeight}" width="25" height="${spendHeight}" rx="5" class="chart-spend-bar"/><text x="${center+2}" y="${baseline+22}" text-anchor="middle" class="chart-axis-label">${w.label}</text></g>`;
+    }).join("");
+    $("#monthly-week-chart").innerHTML = `<svg viewBox="0 0 640 230" role="img" aria-label="Weekly income and spending for ${esc(monthLabel(month))}">${grid}${weekBars}</svg>`;
+    const income = incomeRows.reduce((sum,t)=>sum+(Number(t.amount)||0),0), net = income-totalSpending;
+    const topCategory = categories[0];
+    const merchantTotals = new Map();
+    for (const row of spendingRows) if (row.amount > 0) merchantTotals.set(row.description,(merchantTotals.get(row.description)||0)+row.amount);
+    const topMerchant = [...merchantTotals.entries()].sort((a,b)=>b[1]-a[1])[0];
+    const insights = [
+      ["Actual income",fmt(income)],
+      ["Actual spending",fmt(totalSpending)],
+      ["Income left after spending",fmt(net)],
+      ["Top category",topCategory ? `${topCategory[0]} · ${fmt(topCategory[1])}` : "No spending yet"],
+      ["Largest merchant",topMerchant ? `${topMerchant[0]} · ${fmt(topMerchant[1])}` : "No purchases yet"],
+    ];
+    $("#monthly-spending-insights").innerHTML = insights.map(([label,value])=>`<div class="planner-insight"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join("");
+  }
   function renderMonthly() {
     const months = allMonths();
     const sel = $("#month-select");
@@ -757,7 +820,12 @@
       .join("");
     sel.value = months.includes(old) ? old : selectedMonth;
     const p = getPlan(selectedMonth),
-      actual = sums(selectedMonth);
+      actual = sums(selectedMonth),
+      spendingRows = monthlySpendingRows(selectedMonth),
+      incomeRows = txsForMonth(selectedMonth).filter(t=>t.type === "Income");
+    renderMonthlyCharts(selectedMonth,spendingRows,incomeRows);
+    const actualByCategory = new Map();
+    spendingRows.forEach(row=>actualByCategory.set(row.category,(actualByCategory.get(row.category)||0)+row.amount));
     const plannedIncome = Number(p.income || 0),
       cats = p.categories || {},
       plannedExpenses = Object.values(cats).reduce(
@@ -770,6 +838,7 @@
     const categories = [
       ...new Set([
         ...Object.keys(cats),
+        ...actualByCategory.keys(),
         ...CATEGORIES.filter((c) =>
           [
             "Rent",
@@ -786,9 +855,7 @@
       categories
         .map((cat) => {
           const planned = Number(cats[cat] || 0),
-            actualCat = txsForMonth(selectedMonth)
-              .filter((t) => t.type === "Expense" && t.category === cat)
-              .reduce((s, t) => s + Number(t.amount), 0);
+            actualCat = actualByCategory.get(cat) || 0;
           return `<tr><td>${esc(cat)}</td><td><input data-plan-cat="${esc(cat)}" type="number" min="0" step=".01" value="${planned}"></td><td>${fmt(actualCat)}</td><td class="${planned - actualCat >= 0 ? "positive" : "negative"}">${fmt(planned - actualCat)}</td></tr>`;
         })
         .join("");
