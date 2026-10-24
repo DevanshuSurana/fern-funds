@@ -125,13 +125,13 @@
           <article class="panel"><div class="eyebrow">YOUR BASELINE</div><h3>Financial settings</h3><form id="settings-form" class="form-grid">
             <label>Starting cash savings ($)<input name="startingCash" type="number" min="0" step=".01" required></label>
             <label>Tuition target ($)<input name="tuitionTarget" type="number" min="0" step=".01" required></label>
-            <label>Tuition due date<input name="tuitionDate" type="date" required></label>
+            <label>Tuition due date<input name="tuitionDate" type="date"></label>
             <label>Usual biweekly take-home ($)<input name="paycheck" type="number" min="0" step=".01" required></label>
             <label>NYC trip budget ($)<input name="nycTarget" type="number" min="0" step=".01" required></label>
             <label>India trip budget ($)<input name="indiaTarget" type="number" min="0" step=".01" required></label>
             <button class="button" type="submit">Save settings</button>
           </form></article>
-          <article class="panel cloud-panel"><div class="eyebrow">CLOUD SYNC</div><h3>Sync across your devices</h3><p class="muted small">Sign in with the same email on each device. Your financial records will be stored in your private cloud account.</p>
+          <article class="panel cloud-panel"><div class="eyebrow">CLOUD SYNC</div><h3>Sync across your devices</h3><p class="muted small">Each sign-in has its own private financial records. Sign in with the same email on your devices to sync only that account’s data.</p>
             <div id="cloud-status" class="cloud-status" role="status">Cloud sync is not configured yet.</div>
             <form id="cloud-auth-form" class="form-grid cloud-auth-form">
               <label class="full-span">Email address<input id="cloud-email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
@@ -142,7 +142,7 @@
             <p class="muted small">Use a unique password. If email confirmation is enabled in Supabase, confirm the signup email before signing in. Cloud sync requires the setup described in README.md.</p>
           </article>
           <article class="panel"><div class="eyebrow">YOUR RECORDS</div><h3>Backup & restore</h3><p class="muted small">Download a full backup regularly. Import it to restore your records or keep an offline copy.</p>
-            <div class="settings-actions"><button class="button full-width" id="export-json">↓ Download full JSON backup</button><button class="button secondary full-width" id="export-csv">↓ Export transactions as CSV</button><label class="button secondary full-width file-button">↑ Import JSON backup<input type="file" id="import-json" accept=".json,application/json"></label><button class="button danger-outline full-width" id="reset-data">Reset all app data</button></div>
+            <div class="settings-actions"><button class="button full-width" id="export-json">↓ Download full JSON backup</button><button class="button secondary full-width" id="export-csv">↓ Export transactions as CSV</button><label class="button secondary full-width file-button">↑ Import JSON backup<input type="file" id="import-json" accept=".json,application/json"></label><button class="button danger-outline full-width" id="reset-data">Reset this account’s data</button></div>
             <div class="privacy-box"><strong>How storage works</strong><p>Records are saved locally and, after you sign in and configure Supabase, synced to your private cloud row. Keep a JSON backup as an extra recovery option. Never share your password or upload backups to a public repository.</p></div>
           </article>
         </div>
@@ -171,6 +171,6 @@
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=monthly-charts-20261021"></script>
+  <script src="app.js?v=user-data-isolation-20261024"></script>
 </body>
 </html>

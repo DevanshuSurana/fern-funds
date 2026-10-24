@@ -1,30 +1,32 @@
 (() => {
   "use strict";
   const KEY = "fernFunds.v1";
+  const USER_KEY_PREFIX = `${KEY}.user.`;
+  const LEGACY_CLAIM_KEY = `${KEY}.legacyClaimedBy`;
   const MONTH_START = "2026-10";
   const DEFAULT = {
     settings: {
-      startingCash: 8364,
-      tuitionTarget: 12000,
-      tuitionDate: "2027-08-20",
-      paycheck: 446,
-      nycTarget: 1100,
-      indiaTarget: 1200,
+      startingCash: 0,
+      tuitionTarget: 0,
+      tuitionDate: "",
+      paycheck: 0,
+      nycTarget: 0,
+      indiaTarget: 0,
     },
     cards: [
       {
         name: "Credit card 1",
-        limit: 2500,
+        limit: 0,
         balance: 0,
-        apr: 27.74,
+        apr: 0,
         minPayment: 0,
         dueDate: "",
       },
       {
         name: "Credit card 2",
-        limit: 3000,
-        balance: null,
-        apr: 26.74,
+        limit: 0,
+        balance: 0,
+        apr: 0,
         minPayment: 0,
         dueDate: "",
       },
@@ -72,7 +74,9 @@
   const monthOf = (d) => String(d || "").slice(0, 7);
   const newId = () =>
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  let data = loadData();
+  let activeStorageKey = KEY;
+  let userHadScopedLocalData = false;
+  let data = loadData(activeStorageKey);
   let selectedMonth = MONTH_START;
   let currentView = "overview";
   let cloudClient = null;
@@ -83,22 +87,22 @@
   let localRevision = 0;
   let cloudConfigured = false;
   let cloudReady = false;
-  function loadData() {
+  function normalizeData(parsed) {
+    return {
+      ...structuredClone(DEFAULT),
+      ...parsed,
+      settings: { ...DEFAULT.settings, ...parsed.settings },
+      cards: parsed.cards || structuredClone(DEFAULT.cards),
+      goals: parsed.goals || structuredClone(DEFAULT.goals),
+      plans: parsed.plans || {},
+      transactions: parsed.transactions || [],
+      cardTransactions: parsed.cardTransactions || [],
+    };
+  }
+  function loadData(key = activeStorageKey) {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return {
-          ...structuredClone(DEFAULT),
-          ...parsed,
-          settings: { ...DEFAULT.settings, ...parsed.settings },
-          cards: parsed.cards || structuredClone(DEFAULT.cards),
-          goals: parsed.goals || {},
-          plans: parsed.plans || {},
-          transactions: parsed.transactions || [],
-          cardTransactions: parsed.cardTransactions || [],
-        };
-      }
+      const raw = localStorage.getItem(key);
+      if (raw) return normalizeData(JSON.parse(raw));
     } catch (e) {
       console.warn("Could not load local data", e);
     }
@@ -114,7 +118,8 @@
   }
   function save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(data));
+      localStorage.setItem(activeStorageKey, JSON.stringify(data));
+      if (activeStorageKey.startsWith(USER_KEY_PREFIX)) userHadScopedLocalData = true;
     } catch (e) {
       toast(
         "Could not save locally. Export a backup and check browser storage.",
@@ -194,8 +199,15 @@
     cloudClient.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session?.user) handleSignedIn(session.user);
       if (event === "SIGNED_OUT") {
+        clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = null;
         cloudUser = null;
         cloudReady = false;
+        cloudDirty = false;
+        localRevision++;
+        activeStorageKey = KEY;
+        userHadScopedLocalData = false;
+        data = structuredClone(DEFAULT);
         $("#cloud-auth-form").hidden = false;
         $("#cloud-account-actions").hidden = true;
         showLogin("Signed out. Sign in to reopen your dashboard.");
@@ -283,8 +295,18 @@
   async function handleSignedIn(user) {
     if (!user || !cloudClient) return;
     if (cloudUser?.id === user.id && cloudReady) return;
+    const switchingAccounts = cloudUser?.id && cloudUser.id !== user.id;
+    if (switchingAccounts) {
+      clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+      cloudDirty = false;
+    }
     cloudUser = user;
     cloudReady = false;
+    activeStorageKey = `${USER_KEY_PREFIX}${user.id}`;
+    userHadScopedLocalData = localStorage.getItem(activeStorageKey) !== null;
+    data = userHadScopedLocalData ? loadData(activeStorageKey) : structuredClone(DEFAULT);
+    localRevision++;
     $("#cloud-auth-form").hidden = true;
     $("#cloud-account-actions").hidden = false;
     setCloudStatus(
@@ -292,6 +314,7 @@
       "pending",
     );
     await syncCloud(false);
+    if (!cloudUser || cloudUser.id !== user.id) return;
     showDashboard();
   }
   async function syncCloud(manual) {
@@ -299,10 +322,15 @@
       setCloudStatus("Sign in to sync data.", "error");
       return;
     }
+    const syncUserId = cloudUser.id;
     // Never pull while a write is active or local edits are waiting to be saved.
     if (cloudWriteInProgress) {
-      if (cloudDirty) scheduleCloudSave(500);
-      return;
+      while (cloudWriteInProgress) {
+        await new Promise(resolve => window.setTimeout(resolve, 30));
+        if (!cloudUser || cloudUser.id !== syncUserId) return;
+      }
+      if (!cloudUser || cloudUser.id !== syncUserId) return;
+      return syncCloud(manual);
     }
     if (cloudDirty) {
       clearTimeout(cloudSaveTimer);
@@ -316,20 +344,22 @@
       const { data: row, error } = await cloudClient
         .from("user_finance_data")
         .select("data,updated_at")
-        .eq("user_id", cloudUser.id)
+        .eq("user_id", syncUserId)
         .maybeSingle();
       if (error) throw error;
+      if (!cloudUser || cloudUser.id !== syncUserId) return;
       // A delete/edit made while the read was in flight must win over the stale response.
       if (cloudDirty || localRevision !== revisionBeforePull) {
         cloudDirty = true;
         return;
       }
-      const localRaw = localStorage.getItem(KEY);
-      const localHasData = (() => {
+      const localRaw = localStorage.getItem(activeStorageKey);
+      const localHasData = userHadScopedLocalData && (() => {
         try {
           const x = JSON.parse(localRaw || "{}");
           return (
             (x.transactions || []).length > 0 ||
+            (x.cardTransactions || []).length > 0 ||
             Object.keys(x.plans || {}).length > 0 ||
             Object.values(x.goals || {}).some((v) => Number(v) > 0) ||
             JSON.stringify(x.cards) !== JSON.stringify(DEFAULT.cards) ||
@@ -341,7 +371,27 @@
       })();
       if (row?.data) {
         let useCloud = true;
+        const legacyRaw = localStorage.getItem(KEY);
+        const legacyClaimedBy = localStorage.getItem(LEGACY_CLAIM_KEY);
+        if (!userHadScopedLocalData && legacyRaw && !legacyClaimedBy) {
+          try {
+            const legacy = normalizeData(JSON.parse(legacyRaw));
+            const hasLegacy = legacy.transactions.length || legacy.cardTransactions.length || Object.keys(legacy.plans).length || JSON.stringify(legacy.settings) !== JSON.stringify(DEFAULT.settings) || JSON.stringify(legacy.cards) !== JSON.stringify(DEFAULT.cards);
+            if (hasLegacy) {
+              const importLegacy = confirm(`This account already has cloud records, and this browser has older records that are not assigned to an account. Choose OK only if the older records belong to ${cloudUser.email}; they will replace this account's cloud copy. Choose Cancel to keep this account's cloud records.`);
+              if (importLegacy) {
+                data = legacy;
+                localStorage.setItem(activeStorageKey, JSON.stringify(data));
+                userHadScopedLocalData = true;
+                cloudDirty = true;
+                useCloud = false;
+              }
+            }
+          } catch {}
+          localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
+        }
         if (
+          useCloud &&
           !cloudReady &&
           localHasData &&
           JSON.stringify(data) !== JSON.stringify(row.data)
@@ -351,16 +401,13 @@
           );
         if (useCloud) {
           data = {
-            ...structuredClone(DEFAULT),
-            ...row.data,
-            settings: { ...DEFAULT.settings, ...row.data.settings },
-            cards: row.data.cards || structuredClone(DEFAULT.cards),
-            goals: row.data.goals || {},
-            plans: row.data.plans || {},
-            transactions: row.data.transactions || [],
-            cardTransactions: row.data.cardTransactions || [],
+            ...normalizeData(row.data),
           };
-          localStorage.setItem(KEY, JSON.stringify(data));
+          localStorage.setItem(activeStorageKey, JSON.stringify(data));
+          userHadScopedLocalData = true;
+          if (localStorage.getItem(KEY) && !localStorage.getItem(LEGACY_CLAIM_KEY)) {
+            localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
+          }
           render();
           setCloudStatus(
             "Synced with cloud · " +
@@ -373,6 +420,30 @@
           cloudDirty = true;
         }
       } else {
+        if (userHadScopedLocalData && localStorage.getItem(KEY) && !localStorage.getItem(LEGACY_CLAIM_KEY)) {
+          localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
+        }
+        if (!userHadScopedLocalData) {
+          const legacyRaw = localStorage.getItem(KEY);
+          const legacyClaimedBy = localStorage.getItem(LEGACY_CLAIM_KEY);
+          if (legacyRaw && !legacyClaimedBy) {
+            let legacyData = null;
+            try { legacyData = normalizeData(JSON.parse(legacyRaw)); } catch {}
+            const legacyHasData = legacyData && (
+              legacyData.transactions.length || legacyData.cardTransactions.length ||
+              Object.keys(legacyData.plans).length ||
+              JSON.stringify(legacyData.settings) !== JSON.stringify(DEFAULT.settings) ||
+              JSON.stringify(legacyData.cards) !== JSON.stringify(DEFAULT.cards)
+            );
+            if (legacyHasData && confirm(`This browser has records from the previous shared-device version. Import those records into ${cloudUser.email}, or choose Cancel to start this account with zero balances and a blank transaction history? The old records will not be offered to another account.`)) {
+              data = legacyData;
+              localStorage.setItem(activeStorageKey, JSON.stringify(data));
+              userHadScopedLocalData = true;
+            }
+            localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
+          }
+        }
+        userHadScopedLocalData = true;
         cloudDirty = true;
       }
       cloudReady = true;
@@ -397,18 +468,20 @@
       return;
     }
     cloudWriteInProgress = true;
+    const writeUserId = cloudUser.id;
     const snapshot = structuredClone(data);
     const revisionAtStart = localRevision;
     try {
       const { error } = await cloudClient.from("user_finance_data").upsert(
         {
-          user_id: cloudUser.id,
+          user_id: writeUserId,
           data: snapshot,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" },
       );
       if (error) throw error;
+      if (!cloudUser || cloudUser.id !== writeUserId) return;
       if (localRevision === revisionAtStart) {
         cloudDirty = false;
         clearTimeout(cloudSaveTimer);
@@ -427,6 +500,7 @@
       if (manual && !cloudDirty) toast("Cloud sync complete");
     } catch (e) {
       console.error("Cloud save failed", e);
+      if (!cloudUser || cloudUser.id !== writeUserId) return;
       cloudDirty = true;
       setCloudStatus(
         "Could not sync to cloud: " +
@@ -639,21 +713,8 @@
   function getPlan(m) {
     if (!data.plans[m])
       data.plans[m] = {
-        income: m >= "2026-11" && m <= "2027-04" ? 892 : 0,
-        categories: {
-          Rent: 360,
-          Utilities: 40,
-          Internet: 15,
-          Groceries: m >= "2027-05" && m <= "2027-08" ? 25 : 100,
-          Miscellaneous: m >= "2027-05" && m <= "2027-08" ? 25 : 50,
-          "NYC trip": m === "2026-12" ? 1100 : 0,
-          "India trip": m === "2027-05" ? 1200 : 0,
-          Tuition: m === "2027-08" ? 12000 : 0,
-          Transportation: 0,
-          Health: 0,
-          Entertainment: 0,
-          Other: 0,
-        },
+        income: 0,
+        categories: {},
       };
     return data.plans[m];
   }
@@ -1413,11 +1474,12 @@
     $("#reset-data").onclick = () => {
       if (
         confirm(
-          "This will permanently clear all app records in this browser. Download a backup first. Continue?",
+          "This will permanently clear this signed-in account's app records on this device and sync the reset to its cloud account. Download a backup first. Continue?",
         ) &&
         confirm("Final confirmation: delete all Fern & Funds data?")
       ) {
-        localStorage.removeItem(KEY);
+        localStorage.removeItem(activeStorageKey);
+        userHadScopedLocalData = false;
         data = structuredClone(DEFAULT);
         save();
         render();
