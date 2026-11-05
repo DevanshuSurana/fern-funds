@@ -3,6 +3,7 @@
   const KEY = "fernFunds.v1";
   const USER_KEY_PREFIX = `${KEY}.user.`;
   const LEGACY_CLAIM_KEY = `${KEY}.legacyClaimedBy`;
+  const LEGACY_DECISION_PREFIX = `${KEY}.legacyDecision.`;
   const MONTH_START = "2026-10";
   const DEFAULT = {
     settings: {
@@ -98,6 +99,35 @@
       transactions: parsed.transactions || [],
       cardTransactions: parsed.cardTransactions || [],
     };
+  }
+  function hasFinancialRecords(record) {
+    if (!record) return false;
+    return Boolean(
+      record.transactions?.length ||
+      record.cardTransactions?.length ||
+      Object.keys(record.plans || {}).length ||
+      Object.values(record.goals || {}).some(value => Number(value) !== 0) ||
+      JSON.stringify(record.settings) !== JSON.stringify(DEFAULT.settings) ||
+      JSON.stringify(record.cards) !== JSON.stringify(DEFAULT.cards)
+    );
+  }
+  function dataVolume(record) {
+    if (!record) return 0;
+    const settings = Object.entries(record.settings || {}).filter(([key,value]) =>
+      JSON.stringify(value) !== JSON.stringify(DEFAULT.settings[key])
+    ).length;
+    const cards = (record.cards || []).reduce((count,card,index) => {
+      const baseline = DEFAULT.cards[index];
+      return count + Object.entries(card).filter(([key,value]) => JSON.stringify(value) !== JSON.stringify(baseline?.[key])).length;
+    },0);
+    const goals = Object.values(record.goals || {}).filter(value=>Number(value)!==0).length;
+    return (record.transactions?.length || 0) + (record.cardTransactions?.length || 0) + Object.keys(record.plans || {}).length + settings + cards + goals;
+  }
+  function getLegacyData() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? normalizeData(JSON.parse(raw)) : null;
+    } catch { return null; }
   }
   function loadData(key = activeStorageKey) {
     try {
@@ -354,41 +384,35 @@
         return;
       }
       const localRaw = localStorage.getItem(activeStorageKey);
-      const localHasData = userHadScopedLocalData && (() => {
+      const localRecord = userHadScopedLocalData && (() => {
         try {
-          const x = JSON.parse(localRaw || "{}");
-          return (
-            (x.transactions || []).length > 0 ||
-            (x.cardTransactions || []).length > 0 ||
-            Object.keys(x.plans || {}).length > 0 ||
-            Object.values(x.goals || {}).some((v) => Number(v) > 0) ||
-            JSON.stringify(x.cards) !== JSON.stringify(DEFAULT.cards) ||
-            JSON.stringify(x.settings) !== JSON.stringify(DEFAULT.settings)
-          );
+          return localRaw ? normalizeData(JSON.parse(localRaw)) : null;
         } catch {
-          return false;
+          return null;
         }
       })();
+      const localHasData = hasFinancialRecords(localRecord);
+      const legacyData = getLegacyData();
+      const legacyOwner = localStorage.getItem(LEGACY_CLAIM_KEY);
+      const legacyDecisionKey = `${LEGACY_DECISION_PREFIX}${syncUserId}`;
+      const canOfferLegacy = legacyData && hasFinancialRecords(legacyData) &&
+        (!legacyOwner || legacyOwner === syncUserId) &&
+        !localStorage.getItem(legacyDecisionKey);
       if (row?.data) {
         let useCloud = true;
-        const legacyRaw = localStorage.getItem(KEY);
-        const legacyClaimedBy = localStorage.getItem(LEGACY_CLAIM_KEY);
-        if (!userHadScopedLocalData && legacyRaw && !legacyClaimedBy) {
-          try {
-            const legacy = normalizeData(JSON.parse(legacyRaw));
-            const hasLegacy = legacy.transactions.length || legacy.cardTransactions.length || Object.keys(legacy.plans).length || JSON.stringify(legacy.settings) !== JSON.stringify(DEFAULT.settings) || JSON.stringify(legacy.cards) !== JSON.stringify(DEFAULT.cards);
-            if (hasLegacy) {
-              const importLegacy = confirm(`This account already has cloud records, and this browser has older records that are not assigned to an account. Choose OK only if the older records belong to ${cloudUser.email}; they will replace this account's cloud copy. Choose Cancel to keep this account's cloud records.`);
-              if (importLegacy) {
-                data = legacy;
-                localStorage.setItem(activeStorageKey, JSON.stringify(data));
-                userHadScopedLocalData = true;
-                cloudDirty = true;
-                useCloud = false;
-              }
-            }
-          } catch {}
-          localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
+        const cloudRecord = normalizeData(row.data);
+        const bestCurrentVolume = Math.max(dataVolume(cloudRecord), dataVolume(localRecord));
+        if (canOfferLegacy && dataVolume(legacyData) > bestCurrentVolume) {
+          const importLegacy = confirm(`I found older financial records in this browser for ${cloudUser.email}. They contain more entries than the current account copy. Choose OK to restore those browser records to this account's cloud data, or Cancel to keep the current cloud data. The old browser copy will remain available.`);
+          localStorage.setItem(legacyDecisionKey, importLegacy ? "restored" : "kept-cloud");
+          if (importLegacy) {
+            data = legacyData;
+            localStorage.setItem(activeStorageKey, JSON.stringify(data));
+            userHadScopedLocalData = true;
+            localStorage.setItem(LEGACY_CLAIM_KEY, syncUserId);
+            cloudDirty = true;
+            useCloud = false;
+          }
         }
         if (
           useCloud &&
@@ -418,33 +442,22 @@
           );
         } else {
           cloudDirty = true;
+          render();
         }
       } else {
-        if (userHadScopedLocalData && localStorage.getItem(KEY) && !localStorage.getItem(LEGACY_CLAIM_KEY)) {
-          localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
-        }
-        if (!userHadScopedLocalData) {
-          const legacyRaw = localStorage.getItem(KEY);
-          const legacyClaimedBy = localStorage.getItem(LEGACY_CLAIM_KEY);
-          if (legacyRaw && !legacyClaimedBy) {
-            let legacyData = null;
-            try { legacyData = normalizeData(JSON.parse(legacyRaw)); } catch {}
-            const legacyHasData = legacyData && (
-              legacyData.transactions.length || legacyData.cardTransactions.length ||
-              Object.keys(legacyData.plans).length ||
-              JSON.stringify(legacyData.settings) !== JSON.stringify(DEFAULT.settings) ||
-              JSON.stringify(legacyData.cards) !== JSON.stringify(DEFAULT.cards)
-            );
-            if (legacyHasData && confirm(`This browser has records from the previous shared-device version. Import those records into ${cloudUser.email}, or choose Cancel to start this account with zero balances and a blank transaction history? The old records will not be offered to another account.`)) {
-              data = legacyData;
-              localStorage.setItem(activeStorageKey, JSON.stringify(data));
-              userHadScopedLocalData = true;
-            }
-            localStorage.setItem(LEGACY_CLAIM_KEY, cloudUser.id);
+        if (canOfferLegacy && dataVolume(legacyData) > dataVolume(localRecord)) {
+          const importLegacy = confirm(`I found older financial records in this browser for ${cloudUser.email}, but no cloud planner exists yet. Choose OK to restore those records into this account, or Cancel to create a blank planner. The old browser copy will remain available.`);
+          localStorage.setItem(legacyDecisionKey, importLegacy ? "restored" : "started-blank");
+          if (importLegacy) {
+            data = legacyData;
+            localStorage.setItem(activeStorageKey, JSON.stringify(data));
+            userHadScopedLocalData = true;
           }
+          localStorage.setItem(LEGACY_CLAIM_KEY, syncUserId);
         }
         userHadScopedLocalData = true;
         cloudDirty = true;
+        render();
       }
       cloudReady = true;
     } catch (e) {
