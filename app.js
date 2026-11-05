@@ -387,6 +387,12 @@
       return syncCloud(manual);
     }
     if (cloudDirty) {
+      // Before first sync completes, a dirty flag can only be a stale startup
+      // callback. Pull the account record again instead of uploading defaults.
+      if (!cloudReady) {
+        cloudDirty = false;
+        return syncCloud(manual);
+      }
       clearTimeout(cloudSaveTimer);
       cloudSaveTimer = null;
       await pushCloudData(manual);
@@ -494,11 +500,16 @@
       );
     } finally {
       cloudWriteInProgress = false;
-      if (cloudDirty) scheduleCloudSave(250);
+      if (cloudDirty && !cloudReady) {
+        cloudDirty = false;
+        window.setTimeout(() => {
+          if (cloudUser?.id === syncUserId && !cloudReady) syncCloud(false);
+        }, 0);
+      } else if (cloudDirty) scheduleCloudSave(250);
     }
   }
   async function pushCloudData(manual) {
-    if (!cloudUser || !cloudClient) return;
+    if (!cloudUser || !cloudClient || !cloudReady) return;
     if (cloudWriteInProgress) {
       cloudDirty = true;
       scheduleCloudSave(500);
