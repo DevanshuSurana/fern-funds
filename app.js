@@ -85,6 +85,9 @@
   let cloudSaveTimer = null;
   let cloudWriteInProgress = false;
   let cloudDirty = false;
+  let cloudInitializationPromise = null;
+  let cloudInitializationUserId = null;
+  let authGeneration = 0;
   let localRevision = 0;
   let cloudConfigured = false;
   let cloudReady = false;
@@ -229,6 +232,9 @@
     cloudClient.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session?.user) handleSignedIn(session.user);
       if (event === "SIGNED_OUT") {
+        authGeneration++;
+        cloudInitializationPromise = null;
+        cloudInitializationUserId = null;
         clearTimeout(cloudSaveTimer);
         cloudSaveTimer = null;
         cloudUser = null;
@@ -325,13 +331,20 @@
   async function handleSignedIn(user) {
     if (!user || !cloudClient) return;
     if (cloudUser?.id === user.id && cloudReady) return;
+    if (cloudUser?.id === user.id && cloudInitializationPromise && cloudInitializationUserId === user.id) {
+      return cloudInitializationPromise;
+    }
     const switchingAccounts = cloudUser?.id && cloudUser.id !== user.id;
     if (switchingAccounts) {
+      authGeneration++;
+      cloudInitializationPromise = null;
+      cloudInitializationUserId = null;
       clearTimeout(cloudSaveTimer);
       cloudSaveTimer = null;
       cloudDirty = false;
     }
     cloudUser = user;
+    const currentGeneration = ++authGeneration;
     cloudReady = false;
     activeStorageKey = `${USER_KEY_PREFIX}${user.id}`;
     userHadScopedLocalData = localStorage.getItem(activeStorageKey) !== null;
@@ -343,9 +356,20 @@
       "Signed in as " + user.email + ". Checking cloud data…",
       "pending",
     );
-    await syncCloud(false);
-    if (!cloudUser || cloudUser.id !== user.id) return;
-    showDashboard();
+    cloudInitializationUserId = user.id;
+    cloudInitializationPromise = (async () => {
+      await syncCloud(false);
+      if (authGeneration !== currentGeneration || !cloudUser || cloudUser.id !== user.id) return;
+      showDashboard();
+    })();
+    try {
+      await cloudInitializationPromise;
+    } finally {
+      if (cloudInitializationUserId === user.id) {
+        cloudInitializationPromise = null;
+        cloudInitializationUserId = null;
+      }
+    }
   }
   async function syncCloud(manual) {
     if (!cloudUser || !cloudClient) {
