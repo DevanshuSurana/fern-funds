@@ -678,8 +678,14 @@
         if (!line) { line = { y: item.y, pieces: [] }; pageLines.push(line); }
         line.pieces.push(item);
       }
+      const amountHeader = pageLines.find(line => {
+        const words = line.pieces.map(piece => piece.text.trim().toUpperCase());
+        return words.includes("AMOUNT") && words.includes("BALANCE");
+      });
+      const amountColumnX = amountHeader?.pieces.find(piece => piece.text.trim().toUpperCase() === "AMOUNT")?.x ?? null;
       for (const line of pageLines) {
-        const text = line.pieces.sort((a,b)=>a.x-b.x).map(piece=>piece.text).join(" ").replace(/\s+/g," ").trim();
+        const pieces = line.pieces.sort((a,b)=>a.x-b.x);
+        const text = pieces.map(piece=>piece.text).join(" ").replace(/\s+/g," ").trim();
         if (text) { lines.push(text); allText += `${text}\n`; }
       }
       page.cleanup();
@@ -709,7 +715,15 @@
       else if (dateMatch[3] && dateMatch[3].length === 4) year = Number(dateMatch[3]);
       else if (month > referenceMonth) year--;
       const date = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-      const amountText = amounts[amounts.length - 1][0].trim();
+      const moneyPiecePattern = /^\(?\s*(?:\$\s*)?-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\)?-?$/;
+      const moneyPieces = line.pieces.filter(piece => moneyPiecePattern.test(piece.text.trim()));
+      const amountPiece = amountColumnX === null || !moneyPieces.length
+        ? null
+        : moneyPieces.reduce((nearest,piece) => Math.abs(piece.x-amountColumnX) < Math.abs(nearest.x-amountColumnX) ? piece : nearest);
+      // Chase checking statements include both transaction amount and running
+      // balance. Use the column headed AMOUNT; without that header use the first
+      // amount token, never the trailing running balance.
+      const amountText = (amountPiece?.text || amounts[0][0]).trim();
       const negative = /^\s*\(?-/.test(amountText) || /-\s*$/.test(amountText) || /^\s*\(.*\)\s*$/.test(amountText);
       const amount = Number(amountText.replace(/[,$()\s-]/g,""));
       if (!Number.isFinite(amount) || !amount) continue;
@@ -717,10 +731,10 @@
       if (description.length < 2) continue;
       const hint = /payment|autopay|online pmt|thank you|payment received|refund|return|credit adjustment/i.test(description);
       const isCard = account.startsWith("Credit card");
-      const signed = negative ? -amount : hint ? amount : isCard ? -amount : -amount;
+      const signed = isCard ? (negative ? -amount : hint ? amount : -amount) : (negative ? -amount : amount);
       const cardType = /refund|return|credit adjustment/i.test(description) ? "Refund" : /payment|autopay|online pmt|thank you|payment received/i.test(description) ? "Payment" : /interest charge/i.test(description) ? "Interest" : /annual fee|late fee|service fee/i.test(description) ? "Fee" : "Purchase";
-      const checkingType = /credit card|credit crd|card payment|payment thank/i.test(description) ? "Card payment" : /payroll|paycheck|direct deposit|deposit|refund|return|reimbursement/i.test(description) ? "Income" : "Expense";
-      parsed.push({ id: newId(), date, description, amount: signed, category: inferStatementCategory(description), type: isCard ? cardType : checkingType, pdfNeedsReview: amounts.length > 1 || dates.length > 1, include: true, originalIndex: index });
+      const checkingType = /credit card|credit crd|card payment|payment thank/i.test(description) ? "Card payment" : signed >= 0 ? "Income" : "Expense";
+      parsed.push({ id: newId(), date, description, amount: signed, category: inferStatementCategory(description), type: isCard ? cardType : checkingType, pdfNeedsReview: (!amountPiece && amounts.length > 1) || dates.length > 2, include: true, originalIndex: index });
     }
     if (!parsed.length) throw new Error("No transaction rows could be identified in this PDF. If it is a scanned statement or the layout differs, use Chase's CSV activity export or share a sample statement so the parser can be adjusted.");
     return parsed;
