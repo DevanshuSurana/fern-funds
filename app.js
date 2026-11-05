@@ -658,8 +658,11 @@
     try { pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/build/pdf.min.mjs"); }
     catch { throw new Error("The PDF reader could not load. Check your internet connection and try again; your statement itself is still processed locally."); }
     pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/build/pdf.worker.min.mjs";
-    let pdf;
-    try { pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; }
+    let pdf, pdfLoadingTask;
+    try {
+      pdfLoadingTask = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+      pdf = await pdfLoadingTask.promise;
+    }
     catch (error) { throw new Error(/password/i.test(error?.message || "") ? "This PDF is password-protected. Save an unlocked copy and try again." : "Could not read this PDF. It may be damaged or use an unsupported format."); }
     if (pdf.numPages > 80) throw new Error("This PDF has more than 80 pages. Use a single monthly statement PDF.");
     const lines = [];
@@ -681,7 +684,7 @@
       }
       page.cleanup();
     }
-    await pdf.destroy();
+    await pdfLoadingTask.destroy();
     if (!allText.trim()) throw new Error("This PDF has no selectable text. It looks scanned; use a text-based PDF or Chase activity CSV. The app does not send statements to an OCR service.");
     const years = [...allText.matchAll(/\b20\d{2}\b/g)].map(match=>Number(match[0]));
     const baseYear = years.length ? Math.max(...years) : new Date().getFullYear();
